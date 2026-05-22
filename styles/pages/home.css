@@ -182,7 +182,7 @@ body {
   overflow: hidden;
   display: flex;
   align-items: flex-end;
-  background: url('/assets/Images/hero-desktop.png') center center / cover no-repeat;
+  background: url('https://github.com/polanaeem1/Extra-Brand/blob/main/public/assets/images/hero-desktop.png') center center / cover no-repeat;
 }
 
 .overlay {
