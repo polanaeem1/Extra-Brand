@@ -808,7 +808,7 @@ body {
 }
 
 @media (max-width: 768px) {
-  .hero { background: url('/assets/Images/hero.jpeg') center top / cover no-repeat; }
+  .hero { background: url('https://github.com/polanaeem1/Extra-Brand/blob/main/public/assets/images/hero.jpeg') center top / cover no-repeat; }
   .navbar { padding: 0 20px; height: 64px; }
   .logo-video-wrapper { width: 140px; height: 54px; }
   .nav-icons { gap: 18px; }
