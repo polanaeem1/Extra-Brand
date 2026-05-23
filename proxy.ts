@@ -30,7 +30,8 @@ export async function proxy(request: NextRequest) {
   });
 
   const pathname = request.nextUrl.pathname;
-  if (!pathname.startsWith('/admin') || pathname === '/admin/login') {
+  // Admin is protected; the legacy /admin/login route is handled by next.config redirect.
+  if (!pathname.startsWith('/admin')) {
     return response;
   }
 
@@ -39,7 +40,8 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.redirect(new URL('/admin/login', request.url));
+    const next = encodeURIComponent(pathname + (request.nextUrl.search || ''));
+    return NextResponse.redirect(new URL(`/login?next=${next}`, request.url));
   }
 
   const { data: profile } = await supabase
@@ -49,7 +51,7 @@ export async function proxy(request: NextRequest) {
     .maybeSingle();
 
   if (profile?.role !== 'admin' || profile?.status === 'banned') {
-    return NextResponse.redirect(new URL('/admin/login', request.url));
+    return NextResponse.redirect(new URL('/', request.url));
   }
 
   return response;

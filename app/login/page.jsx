@@ -15,11 +15,21 @@ export default function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
+    const next = (() => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('next') || '';
+      } catch {
+        return '';
+      }
+    })();
+
     const supabase = createClient();
     supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return;
       const { isAdmin } = await getCurrentAdmin();
-      router.replace(isAdmin ? '/admin' : '/');
+      const destination = isAdmin ? (next || '/admin') : '/';
+      router.replace(destination);
     });
   }, [router]);
 
@@ -50,8 +60,20 @@ export default function LoginPage() {
 
     await supabase.auth.getSession();
     const { isAdmin } = await getCurrentAdmin();
-    router.refresh();
-    router.push(isAdmin ? '/admin' : '/');
+
+    const destination = (() => {
+      const next = (() => {
+        try {
+          const params = new URLSearchParams(window.location.search);
+          return params.get('next') || '';
+        } catch {
+          return '';
+        }
+      })();
+      return isAdmin ? (next || '/admin') : '/';
+    })();
+    // Use a full navigation so cookies/session are definitely applied before middleware checks.
+    window.location.assign(destination);
   };
 
   return (

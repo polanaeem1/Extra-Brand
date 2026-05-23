@@ -48,10 +48,20 @@ export default function RegisterPage() {
     setIsSubmitting(true);
 
     const supabase = createClient();
+    const emailRedirectTo = (() => {
+      try {
+        // Use the current origin to avoid Supabase "redirect URL not allowed" issues
+        // when developing on different devices/hosts (localhost vs 127.0.0.1 vs LAN IP).
+        return `${window.location.origin}/welcome`;
+      } catch {
+        return undefined;
+      }
+    })();
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
+        ...(emailRedirectTo ? { emailRedirectTo } : {}),
         data: {
           first_name: firstName,
           last_name: lastName,
