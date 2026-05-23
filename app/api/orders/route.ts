@@ -36,6 +36,7 @@ export async function POST(request: Request) {
       variant_id: typeof item.variant_id === 'string' ? item.variant_id : '',
       product_name: String(item.product_name),
       size: String(item.size),
+      color: typeof item.color === 'string' ? item.color : '',
       quantity: Number(item.quantity || 1),
       unit_price: Number(item.unit_price || 0),
       line_total: Number(item.line_total || 0),

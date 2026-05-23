@@ -25,7 +25,7 @@ interface Order {
   payment: string;
   paymentStatus: string;
   receiptUrl: string;
-  products: { name: string; qty: number; price: number; size: string }[];
+  products: { name: string; qty: number; price: number; size: string; color: string }[];
 }
 
 const STATUSES: OrderStatus[] = ['Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
@@ -81,6 +81,7 @@ export default function AdminOrders() {
         qty: Number(item.quantity || 0),
         price: Number(item.unit_price || 0),
         size: item.size,
+        color: item.color || '',
       })),
     })));
   };
@@ -325,6 +326,7 @@ export default function AdminOrders() {
                     <tr>
                       <th className="px-4 py-3 font-normal">PRODUCT</th>
                       <th className="px-4 py-3 font-normal text-center">SIZE</th>
+                      <th className="px-4 py-3 font-normal text-center">COLOR</th>
                       <th className="px-4 py-3 font-normal text-center">QTY</th>
                       <th className="px-4 py-3 font-normal text-right">TOTAL</th>
                     </tr>
@@ -334,6 +336,7 @@ export default function AdminOrders() {
                       <tr key={i}>
                         <td className="px-4 py-3 font-bold">{product.name}</td>
                         <td className="px-4 py-3 text-center">{product.size}</td>
+                        <td className="px-4 py-3 text-center">{product.color || '-'}</td>
                         <td className="px-4 py-3 text-center">{product.qty}</td>
                         <td className="px-4 py-3 text-right">LE {(product.price * product.qty).toFixed(2)}</td>
                       </tr>

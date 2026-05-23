@@ -235,6 +235,7 @@ body {
 }
 .product-page .size-btn:hover { border-color: rgba(207,207,207,0.8); color: #fff; }
 .product-page .size-btn.active { background: #fff; color: #000; border-color: #fff; }
+.product-page .color-btn { width: auto; min-width: 72px; padding: 0 14px; }
 
 .product-page .qty-wrap { display: flex; align-items: center; border: 1px solid rgba(207,207,207,0.3); width: fit-content; }
 .product-page .qty-btn { width: 52px; height: 52px; background: transparent; border: none; color: var(--silver); font-size: 20px; cursor: pointer; transition: color 0.3s, background 0.3s; }

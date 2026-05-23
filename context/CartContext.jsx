@@ -38,7 +38,7 @@ export function CartProvider({ children }) {
       const qty = Number(item?.qty || 1);
       if (!visitorId || !productId || !qty || qty <= 0) return;
 
-      const key = `extra_cart_evt_v1:${visitorId}:${productId}:${variantId || 'none'}`;
+      const key = `extra_cart_evt_v1:${visitorId}:${productId}:${variantId || 'none'}:${item?.color || 'none'}`;
       const now = Date.now();
       const last = Number(sessionStorage.getItem(key) || 0);
       if (last && now - last < 2500) return; // throttle fast double clicks
@@ -66,10 +66,10 @@ export function CartProvider({ children }) {
   const addToCart = useCallback((item) => {
     trackAddToCart(item);
     setCart(prev => {
-      const existing = prev.find(i => i.name === item.name && i.size === item.size);
+      const existing = prev.find(i => i.name === item.name && i.size === item.size && (i.color || '') === (item.color || ''));
       if (existing) {
         return prev.map(i =>
-          i.name === item.name && i.size === item.size
+          i.name === item.name && i.size === item.size && (i.color || '') === (item.color || '')
             ? { ...i, qty: i.qty + item.qty }
             : i
         );

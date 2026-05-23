@@ -157,11 +157,14 @@ create table if not exists public.order_items (
   variant_id uuid references public.product_variants(id),
   product_name text not null,
   size text not null,
+  color text,
   quantity int not null check (quantity > 0),
   unit_price numeric(10,2) not null,
   line_total numeric(10,2) not null,
   created_at timestamptz not null default now()
 );
+
+alter table public.order_items add column if not exists color text;
 
 -- Backward-compatible: ensure deleting products/variants does not break order history.
 -- Orders keep product_name/size/unit_price snapshots, so FK can safely set null.
@@ -504,7 +507,7 @@ begin
     end if;
 
     insert into public.order_items (
-      order_id, product_id, variant_id, product_name, size,
+      order_id, product_id, variant_id, product_name, size, color,
       quantity, unit_price, line_total
     )
     values (
@@ -513,6 +516,7 @@ begin
       nullif(item->>'variant_id', '')::uuid,
       item->>'product_name',
       item->>'size',
+      nullif(item->>'color', ''),
       item_quantity,
       coalesce((item->>'unit_price')::numeric, 0),
       coalesce((item->>'line_total')::numeric, 0)

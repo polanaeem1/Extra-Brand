@@ -17,6 +17,7 @@ export default function ProductPage() {
 
   const [currentIndex, setCurrentIndex] = useState(0);
   const [size, setSize] = useState('');
+  const [color, setColor] = useState('');
   const [qty, setQty] = useState(1);
   const [lowStockMsg, setLowStockMsg] = useState('');
   const [openAccordion, setOpenAccordion] = useState(null);
@@ -33,6 +34,7 @@ export default function ProductPage() {
       setIsLoadingProduct(false);
       setCurrentIndex(0);
       setSize('');
+      setColor('');
       setQty(1);
     });
 
@@ -62,6 +64,10 @@ export default function ProductPage() {
   const availableSizes = product.variants?.length
     ? product.variants.filter((variant) => variant.stock > 0).map((variant) => variant.size)
     : [];
+  const availableColors = product.colorVariants?.length
+    ? product.colorVariants.filter((variant) => variant.stock > 0).map((variant) => variant.color)
+    : [];
+  const requiresColor = availableColors.length > 0;
 
   const goToImage = (index) => {
     if (!totalImages) return;
@@ -119,6 +125,11 @@ export default function ProductPage() {
       document.querySelector('.size-buttons')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+    if (requiresColor && !color) {
+      setLowStockMsg('PLEASE SELECT A COLOR FIRST.');
+      document.querySelector('.color-buttons')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     setLowStockMsg('');
 
     flyAnimation(() => {
@@ -128,6 +139,7 @@ export default function ProductPage() {
         name: product.title,
         price: product.price,
         size,
+        color,
         qty,
         img: product.images[0] || ''
       });
@@ -141,6 +153,11 @@ export default function ProductPage() {
       document.querySelector('.size-buttons')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
+    if (requiresColor && !color) {
+      setLowStockMsg('PLEASE SELECT A COLOR FIRST.');
+      document.querySelector('.color-buttons')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
     setLowStockMsg('');
     saveCheckout([{
       productId: product.id?.toString?.() || '',
@@ -149,6 +166,7 @@ export default function ProductPage() {
       price: product.price,
       qty,
       size,
+      color,
       img: product.images[0] || '',
     }], 'buy-now');
     router.push('/buynow?checkout=buy-now');
@@ -208,6 +226,23 @@ export default function ProductPage() {
             ))}
           </div>
         </div>
+
+        {requiresColor && (
+          <div className="option-group">
+            <p className="option-label">COLOR</p>
+            <div className="size-buttons color-buttons">
+              {availableColors.map(c => (
+                <button
+                  key={c}
+                  className={`size-btn color-btn ${color === c ? 'active' : ''}`}
+                  onClick={() => setColor(c)}
+                >
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="option-group">
           <p className="option-label">QUANTITY</p>

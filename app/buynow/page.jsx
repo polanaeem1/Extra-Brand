@@ -110,6 +110,7 @@ function BuyNowContent() {
       variant_id: item.variantId,
       product_name: item.name,
       size: item.size,
+      color: item.color || '',
       quantity: item.qty,
       unit_price: item.price.toFixed(2),
       line_total: (item.price * item.qty).toFixed(2),
@@ -217,6 +218,12 @@ function BuyNowContent() {
             <p className="order-label">SIZE</p>
               <p className="order-value">{item.size}</p>
                 </div>
+                {item.color && (
+                  <div className='order-details-size'>
+                    <p className="order-label">COLOR</p>
+                    <p className="order-value">{item.color}</p>
+                  </div>
+                )}
                 <div className='order-details-quantity'>
               <p className="order-label">QUANTITY</p>
               <p className="order-value">{item.qty} </p>

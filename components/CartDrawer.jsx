@@ -55,7 +55,9 @@ export default function CartDrawer() {
                   <img src={item.img} alt={item.name} className="cart-item-img" />
                   <div className="cart-item-info">
                     <p className="cart-item-name">{item.name}</p>
-                    <p className="cart-item-meta">SIZE: {item.size} &nbsp;|&nbsp; QTY: {item.qty}</p>
+                    <p className="cart-item-meta">
+                      SIZE: {item.size}{item.color ? ` | COLOR: ${item.color}` : ''} &nbsp;|&nbsp; QTY: {item.qty}
+                    </p>
                     <p className="cart-item-price">LE {(item.price * item.qty).toFixed(2)}</p>
                   </div>
                   <ion-icon
