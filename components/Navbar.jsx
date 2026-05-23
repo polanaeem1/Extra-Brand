@@ -11,6 +11,7 @@ export default function Navbar() {
   const navRef = useRef(null);
   const profileRef = useRef(null);
   const [userEmail, setUserEmail] = useState('');
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const supabase = createClient();
 
@@ -27,12 +28,31 @@ export default function Navbar() {
   useEffect(() => {
     let isMounted = true;
 
-    supabase.auth.getUser().then(({ data }) => {
-      if (isMounted) setUserEmail(data.user?.email || '');
-    });
+    const refreshIdentity = async (sessionUser) => {
+      const user = sessionUser || (await supabase.auth.getUser()).data.user;
+      if (!isMounted) return;
+
+      setUserEmail(user?.email || '');
+      setIsAdmin(false);
+
+      if (!user?.id) return;
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('role,status')
+        .eq('id', user.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+      setIsAdmin(profile?.role === 'admin' && profile?.status !== 'banned');
+    };
+
+    refreshIdentity(null);
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user?.email || '');
+      setIsAdmin(false);
+      if (session?.user) refreshIdentity(session.user);
       setIsProfileOpen(false);
     });
 
@@ -56,6 +76,7 @@ export default function Navbar() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setUserEmail('');
+    setIsAdmin(false);
     setIsProfileOpen(false);
     window.location.href = '/';
   };
@@ -124,6 +145,30 @@ export default function Navbar() {
                   }}>
                     {userEmail}
                   </p>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileOpen(false);
+                        window.location.href = '/admin';
+                      }}
+                      style={{
+                        width: '100%',
+                        border: '1px solid rgba(255,255,255,0.14)',
+                        background: 'transparent',
+                        color: '#fff',
+                        padding: '10px 12px',
+                        cursor: 'pointer',
+                        fontFamily: 'Syncopate, sans-serif',
+                        fontSize: 10,
+                        fontWeight: 700,
+                        letterSpacing: '0.18em',
+                        marginBottom: 10,
+                      }}
+                    >
+                      DASHBOARD
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleLogout}
