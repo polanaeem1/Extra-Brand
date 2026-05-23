@@ -83,7 +83,7 @@ export default function LoginPage() {
                 onChange={e => setPassword(e.target.value)}
               />
               <ion-icon 
-                name={showPassword ? "eye-off-outline" : "eye-outline"}
+                name={showPassword ? "eye-outline" : "eye-off-outline"}
                 className="eye-icon" 
                 onClick={() => setShowPassword(!showPassword)}
                 style={{ opacity: showPassword ? 0.4 : 1 }}

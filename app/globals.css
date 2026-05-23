@@ -75,3 +75,17 @@ a {
   text-decoration: none;
   color: inherit;
 }
+
+/* Navbar logo video: zoom a bit more on mobile without changing the overall design. */
+@media (max-width: 768px) {
+  .navbar .logo-video {
+        position: relative;
+        top: -22px;
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar .logo-video {
+    transform: scale(3);
+  }
+}
