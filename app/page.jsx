@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Footer from '@/components/Footer';
 import { fetchProducts } from '@/lib/supabase/catalog';
+import { createClient } from '@/lib/supabase/browser';
 import '@/styles/pages/home.css';
 
 const socialLinks = [
   { href: 'https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt', icon: 'logo-instagram', label: 'Instagram' },
+  // TODO: replace with your official Facebook page URL.
+  { href: 'https://www.facebook.com/', icon: 'logo-facebook', label: 'Facebook' },
   { href: 'https://www.tiktok.com/@extra.styling?_r=1&_t=ZS-96QITrolAuK', icon: 'logo-tiktok', label: 'TikTok' },
-  { href: 'https://wa.me/201001970249', icon: 'logo-whatsapp', label: 'WhatsApp' },
 ];
 
 export default function Home() {
@@ -19,14 +21,30 @@ export default function Home() {
   
   useEffect(() => {
     let isMounted = true;
-    fetchProducts().then((nextProducts) => {
-      if (!isMounted) return;
-      setProducts(nextProducts);
-      setIsLoadingProducts(false);
-    });
+    const supabase = createClient();
+
+    const refresh = () =>
+      fetchProducts().then((nextProducts) => {
+        if (!isMounted) return;
+        setProducts(nextProducts);
+        setIsLoadingProducts(false);
+      });
+
+    refresh();
+
+    const channel = supabase
+      .channel('public:products')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, refresh)
+      .subscribe();
+
+    const intervalId = window.setInterval(refresh, 30000);
 
     return () => {
       isMounted = false;
+      window.clearInterval(intervalId);
+      supabase.removeChannel(channel);
     };
   }, []);
 
@@ -92,7 +110,7 @@ export default function Home() {
 
   return (
     <>
-      <section className="hero">
+      <section className="hero" id="top">
         <div className="overlay"></div>
         <div className="hero-content">
           <h1>ALWAYS EXTRA..<br/>NEVER BASIC</h1>

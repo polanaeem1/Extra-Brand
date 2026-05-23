@@ -21,29 +21,72 @@ export default function AdminUsers() {
   const [search, setSearch] = useState('');
   const [viewUser, setViewUser] = useState<User | null>(null);
 
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const loadUsers = async () => {
-    const { data } = await supabase
+    const { data: profiles, error: profileError } = await supabase
       .from('profiles')
       .select('*')
       .order('created_at', { ascending: false });
 
-    setUsers((data || []).map((profile: any) => ({
-      id: profile.id,
-      name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email || 'Customer',
-      email: profile.email || '',
-      phone: profile.phone || '',
-      joined: new Date(profile.created_at),
-      orders: 0,
-      spent: 0,
-      status: profile.status === 'banned' ? 'Banned' : 'Active',
-    })));
+    if (profileError) return;
+
+    const { data: orders, error: ordersError } = await supabase
+      .from('orders')
+      .select('email,total,status');
+
+    if (ordersError) return;
+
+    const spendByEmail = new Map<string, { orders: number; spent: number }>();
+
+    (orders || []).forEach((order: any) => {
+      const email = String(order.email || '').trim().toLowerCase();
+      if (!email) return;
+      if (order.status === 'Cancelled') return;
+
+      const current = spendByEmail.get(email) || { orders: 0, spent: 0 };
+      current.orders += 1;
+      current.spent += Number(order.total || 0);
+      spendByEmail.set(email, current);
+    });
+
+    setUsers((profiles || []).map((profile: any) => {
+      const emailKey = String(profile.email || '').trim().toLowerCase();
+      const totals = spendByEmail.get(emailKey) || { orders: 0, spent: 0 };
+
+      return ({
+        id: profile.id,
+        name: [profile.first_name, profile.last_name].filter(Boolean).join(' ') || profile.email || 'Customer',
+        email: profile.email || '',
+        phone: profile.phone || '',
+        joined: new Date(profile.created_at),
+        orders: totals.orders,
+        spent: totals.spent,
+        status: profile.status === 'banned' ? 'Banned' : 'Active',
+      });
+    }));
   };
 
   useEffect(() => {
     loadUsers();
   }, []);
+
+  useEffect(() => {
+    const refresh = () => loadUsers();
+
+    const channel = supabase
+      .channel('admin:users-spend')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
+      .subscribe();
+
+    const intervalId = window.setInterval(refresh, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
 
   const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(search.toLowerCase()) || 

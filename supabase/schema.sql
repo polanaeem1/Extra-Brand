@@ -47,9 +47,40 @@ create table if not exists public.product_variants (
   unique (product_id, size)
 );
 
+-- Promo codes (admin-managed, validated on the backend).
+create table if not exists public.promo_codes (
+  id uuid primary key default gen_random_uuid(),
+  code text not null,
+  discount_percentage numeric(5,2) not null check (discount_percentage > 0 and discount_percentage <= 100),
+  starts_at timestamptz not null default now(),
+  expires_at timestamptz,
+  is_active boolean not null default true,
+  usage_limit int,
+  used_count int not null default 0,
+  minimum_order_amount numeric(10,2),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (code),
+  check (code = upper(code)),
+  check (usage_limit is null or usage_limit >= 0),
+  check (used_count >= 0),
+  check (minimum_order_amount is null or minimum_order_amount >= 0)
+);
+
+create index if not exists promo_codes_code_idx on public.promo_codes (code);
+create index if not exists promo_codes_active_idx on public.promo_codes (is_active);
+
 create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_number text unique not null default ('ORD-' || upper(substr(gen_random_uuid()::text, 1, 8))),
+  -- Optional attribution fields for analytics/funnel linking.
+  visitor_id text,
+  user_id uuid references auth.users(id),
+  -- Promo codes / discounts (stored on the order for auditing)
+  promo_code text,
+  discount_percentage numeric(5,2) not null default 0,
+  discount_amount numeric(10,2) not null default 0,
+  final_total numeric(10,2),
   customer_name text not null,
   email text not null,
   phone text not null,
@@ -66,6 +97,14 @@ create table if not exists public.orders (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+-- Backward-compatible: if the orders table already exists, ensure new columns exist.
+alter table public.orders add column if not exists visitor_id text;
+alter table public.orders add column if not exists user_id uuid references auth.users(id);
+alter table public.orders add column if not exists promo_code text;
+alter table public.orders add column if not exists discount_percentage numeric(5,2) not null default 0;
+alter table public.orders add column if not exists discount_amount numeric(10,2) not null default 0;
+alter table public.orders add column if not exists final_total numeric(10,2);
 
 create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
@@ -90,6 +129,51 @@ create table if not exists public.page_views (
   created_at timestamptz not null default now()
 );
 
+-- New analytics table (traffic sources + daily visitors, using only the public key + RLS).
+create table if not exists public.analytics_visits (
+  id uuid primary key default gen_random_uuid(),
+  visitor_id text not null,
+  page_path text not null,
+  visit_date date not null default current_date,
+  referrer text,
+  traffic_source text not null default 'Direct',
+  utm_source text,
+  utm_medium text,
+  utm_campaign text,
+  user_id uuid references auth.users(id),
+  created_at timestamptz not null default now()
+);
+
+-- Add-to-cart tracking for funnel analytics.
+create table if not exists public.cart_events (
+  id uuid primary key default gen_random_uuid(),
+  visitor_id text not null,
+  user_id uuid references auth.users(id),
+  product_id uuid references public.products(id),
+  variant_id uuid references public.product_variants(id),
+  quantity int not null default 1 check (quantity > 0),
+  created_at timestamptz not null default now()
+);
+
+create index if not exists cart_events_created_at_idx on public.cart_events (created_at desc);
+create index if not exists cart_events_visitor_id_idx on public.cart_events (visitor_id);
+create index if not exists cart_events_user_id_idx on public.cart_events (user_id);
+
+-- Backward-compatible: if the analytics_visits table already exists, ensure visit_date exists.
+alter table public.analytics_visits add column if not exists visit_date date not null default current_date;
+
+create index if not exists analytics_visits_created_at_idx on public.analytics_visits (created_at desc);
+create index if not exists analytics_visits_visit_date_idx on public.analytics_visits (visit_date desc);
+create index if not exists analytics_visits_visitor_id_idx on public.analytics_visits (visitor_id);
+create index if not exists analytics_visits_traffic_source_idx on public.analytics_visits (traffic_source);
+
+-- Remove the old dedupe index (it used a non-IMMUTABLE expression on timestamptz -> date).
+drop index if exists public.analytics_visits_unique_daily_path_idx;
+
+-- Optional dedupe to reduce noise from refreshes (same visitor + same page on the same day).
+create unique index if not exists analytics_visits_unique_daily_page
+on public.analytics_visits (visitor_id, page_path, visit_date);
+
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -106,6 +190,82 @@ as $$
 $$;
 
 grant execute on function public.is_admin() to anon, authenticated;
+
+create or replace function public.set_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+drop trigger if exists promo_codes_set_updated_at on public.promo_codes;
+create trigger promo_codes_set_updated_at
+before update on public.promo_codes
+for each row execute function public.set_updated_at();
+
+create or replace function public.validate_promo_code(p_code text, p_subtotal numeric)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  promo public.promo_codes;
+  normalized text;
+  discount_pct numeric(5,2);
+  discount_amt numeric(10,2);
+begin
+  normalized := upper(trim(coalesce(p_code, '')));
+
+  if normalized = '' then
+    return jsonb_build_object('ok', false, 'reason', 'missing');
+  end if;
+
+  select *
+  into promo
+  from public.promo_codes
+  where code = normalized;
+
+  if not found then
+    return jsonb_build_object('ok', false, 'reason', 'invalid');
+  end if;
+
+  if promo.is_active is not true then
+    return jsonb_build_object('ok', false, 'reason', 'inactive');
+  end if;
+
+  if promo.starts_at > now() then
+    return jsonb_build_object('ok', false, 'reason', 'not_started');
+  end if;
+
+  if promo.expires_at is not null and promo.expires_at <= now() then
+    return jsonb_build_object('ok', false, 'reason', 'expired');
+  end if;
+
+  if promo.usage_limit is not null and promo.used_count >= promo.usage_limit then
+    return jsonb_build_object('ok', false, 'reason', 'limit_reached');
+  end if;
+
+  if promo.minimum_order_amount is not null and coalesce(p_subtotal, 0) < promo.minimum_order_amount then
+    return jsonb_build_object('ok', false, 'reason', 'min_not_met', 'minimum_order_amount', promo.minimum_order_amount);
+  end if;
+
+  discount_pct := promo.discount_percentage;
+  discount_amt := round((coalesce(p_subtotal, 0) * discount_pct / 100)::numeric, 2);
+
+  return jsonb_build_object(
+    'ok', true,
+    'code', promo.code,
+    'discount_percentage', discount_pct,
+    'discount_amount', discount_amt
+  );
+end;
+$$;
+
+grant execute on function public.validate_promo_code(text, numeric) to anon, authenticated;
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -153,21 +313,89 @@ declare
   item jsonb;
   variant_record public.product_variants;
   item_quantity int;
+  v_shipping_fee numeric(10,2);
+  v_subtotal numeric(10,2);
+  v_total numeric(10,2);
+  v_promo_code text;
+  v_discount_pct numeric(5,2) := 0;
+  v_discount_amt numeric(10,2) := 0;
+  v_final_total numeric(10,2);
+  promo_record public.promo_codes;
 begin
+  v_shipping_fee := coalesce((order_payload->>'shipping_fee')::numeric, 0);
+  v_subtotal := coalesce((order_payload->>'subtotal')::numeric, 0);
+  v_total := round((v_subtotal + v_shipping_fee)::numeric, 2);
+  v_promo_code := upper(trim(coalesce(order_payload->>'promo_code', '')));
+
+  if v_promo_code <> '' then
+    select *
+    into promo_record
+    from public.promo_codes
+    where code = v_promo_code
+    for update;
+
+    if not found then
+      raise exception 'Invalid promo code.';
+    end if;
+
+    if promo_record.is_active is not true then
+      raise exception 'Promo code is inactive.';
+    end if;
+
+    if promo_record.starts_at > now() then
+      raise exception 'Promo code is not started yet.';
+    end if;
+
+    if promo_record.expires_at is not null and promo_record.expires_at <= now() then
+      raise exception 'Promo code expired.';
+    end if;
+
+    if promo_record.usage_limit is not null and promo_record.used_count >= promo_record.usage_limit then
+      raise exception 'Promo code usage limit reached.';
+    end if;
+
+    if promo_record.minimum_order_amount is not null and v_subtotal < promo_record.minimum_order_amount then
+      raise exception 'Minimum order amount not met.';
+    end if;
+
+    v_discount_pct := promo_record.discount_percentage;
+    v_discount_amt := round((v_subtotal * v_discount_pct / 100)::numeric, 2);
+
+    if v_discount_amt < 0 then v_discount_amt := 0; end if;
+    if v_discount_amt > v_subtotal then v_discount_amt := v_subtotal; end if;
+
+    update public.promo_codes
+    set used_count = used_count + 1, updated_at = now()
+    where id = promo_record.id;
+  else
+    v_promo_code := null;
+  end if;
+
+  v_final_total := round(((v_subtotal - v_discount_amt) + v_shipping_fee)::numeric, 2);
+  if v_final_total < 0 then v_final_total := 0; end if;
+
   insert into public.orders (
+    visitor_id, user_id,
+    promo_code, discount_percentage, discount_amount, final_total,
     customer_name, email, phone, address, city, notes,
     shipping_fee, subtotal, total, payment_method, payment_status, receipt_url
   )
   values (
+    nullif(order_payload->>'visitor_id', ''),
+    auth.uid(),
+    v_promo_code,
+    coalesce(v_discount_pct, 0),
+    coalesce(v_discount_amt, 0),
+    v_final_total,
     order_payload->>'customer_name',
     order_payload->>'email',
     order_payload->>'phone',
     order_payload->>'address',
     order_payload->>'city',
     order_payload->>'notes',
-    coalesce((order_payload->>'shipping_fee')::numeric, 0),
-    coalesce((order_payload->>'subtotal')::numeric, 0),
-    coalesce((order_payload->>'total')::numeric, 0),
+    v_shipping_fee,
+    v_subtotal,
+    v_final_total,
     order_payload->>'payment_method',
     coalesce(order_payload->>'payment_status', 'pending'),
     order_payload->>'receipt_url'
@@ -223,9 +451,12 @@ alter table public.profiles enable row level security;
 alter table public.products enable row level security;
 alter table public.product_images enable row level security;
 alter table public.product_variants enable row level security;
+alter table public.promo_codes enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 alter table public.page_views enable row level security;
+alter table public.analytics_visits enable row level security;
+alter table public.cart_events enable row level security;
 
 drop policy if exists "profiles_select_self_or_admin" on public.profiles;
 create policy "profiles_select_self_or_admin" on public.profiles
@@ -283,9 +514,20 @@ drop policy if exists "product_variants_admin_write" on public.product_variants;
 create policy "product_variants_admin_write" on public.product_variants
 for all using (public.is_admin()) with check (public.is_admin());
 
+drop policy if exists "promo_codes_admin_all" on public.promo_codes;
+create policy "promo_codes_admin_all" on public.promo_codes
+for all using (public.is_admin()) with check (public.is_admin());
+
 drop policy if exists "orders_public_insert" on public.orders;
 create policy "orders_public_insert" on public.orders
-for insert with check (true);
+for insert with check (
+  visitor_id is not null
+  and length(visitor_id) > 0
+  and (
+    (auth.uid() is null and user_id is null)
+    or (auth.uid() = user_id)
+  )
+);
 
 drop policy if exists "orders_admin_read_update" on public.orders;
 create policy "orders_admin_read_update" on public.orders
@@ -305,6 +547,39 @@ for insert with check (true);
 
 drop policy if exists "page_views_admin_read" on public.page_views;
 create policy "page_views_admin_read" on public.page_views
+for select using (public.is_admin());
+
+drop policy if exists "analytics_visits_public_insert" on public.analytics_visits;
+create policy "analytics_visits_public_insert" on public.analytics_visits
+for insert with check (
+  visitor_id is not null
+  and length(visitor_id) > 0
+  and page_path is not null
+  and page_path not like '/admin%'
+  and (
+    (auth.uid() is null and user_id is null)
+    or (auth.uid() = user_id)
+  )
+);
+
+drop policy if exists "analytics_visits_admin_read" on public.analytics_visits;
+create policy "analytics_visits_admin_read" on public.analytics_visits
+for select using (public.is_admin());
+
+drop policy if exists "cart_events_public_insert" on public.cart_events;
+create policy "cart_events_public_insert" on public.cart_events
+for insert with check (
+  visitor_id is not null
+  and length(visitor_id) > 0
+  and quantity > 0
+  and (
+    (auth.uid() is null and user_id is null)
+    or (auth.uid() = user_id)
+  )
+);
+
+drop policy if exists "cart_events_admin_read" on public.cart_events;
+create policy "cart_events_admin_read" on public.cart_events
 for select using (public.is_admin());
 
 -- Create these buckets in Storage if they do not exist:
@@ -410,3 +685,46 @@ insert into public.profiles (id, email, role, status, created_at, updated_at)
 select id, email, 'customer', 'active', now(), now()
 from auth.users
 on conflict (id) do nothing;
+
+-- Optional: enable realtime for key tables (required for the app's live updates).
+do $$
+begin
+  alter publication supabase_realtime add table public.products;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.product_images;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.product_variants;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.orders;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.order_items;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.analytics_visits;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.cart_events;
+exception when duplicate_object then null;
+end $$;

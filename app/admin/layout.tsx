@@ -1,12 +1,12 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
 import { 
   LayoutDashboard, ShoppingBag, Package, 
-  Users, LineChart, LogOut, Bell, Search, Menu
+  Users, LineChart, LogOut, Bell, Search, Menu, Tag
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -14,31 +14,31 @@ const navItems = [
   { name: 'Overview', href: '/admin', icon: LayoutDashboard },
   { name: 'Orders', href: '/admin/orders', icon: ShoppingBag },
   { name: 'Products', href: '/admin/products', icon: Package },
+  { name: 'Promo Codes', href: '/admin/promos', icon: Tag },
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Analytics', href: '/admin/analytics', icon: LineChart },
 ];
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const isLoginPage = pathname === '/admin/login';
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-  const [isLoading, setIsLoading] = useState(!isLoginPage);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [notifOrders, setNotifOrders] = useState<any[]>([]);
+  const [notifError, setNotifError] = useState('');
+  const notifRef = useRef<HTMLDivElement | null>(null);
+  const [supabase] = useState(() => createClient());
 
   useEffect(() => {
     let isMounted = true;
-
-    // Login should render immediately instead of showing the admin shell loader.
-    if (isLoginPage) {
-      setIsLoading(false);
-      return;
-    }
 
     getCurrentAdmin().then(({ isAdmin }) => {
       if (!isMounted) return;
 
       if (!isAdmin) {
-        window.location.href = '/admin/login';
+        const next = encodeURIComponent(pathname || '/admin');
+        window.location.href = `/login?next=${next}`;
         return;
       }
 
@@ -49,14 +49,62 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => {
       isMounted = false;
     };
-  }, [isLoginPage, pathname]);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const loadNotifications = async () => {
+      const { data, error } = await supabase
+        .from('orders')
+        .select('id,order_number,customer_name,status,created_at,total')
+        .order('created_at', { ascending: false })
+        .limit(6);
+
+      if (error) {
+        setNotifError(error.message);
+        return;
+      }
+
+      setNotifError('');
+      setNotifOrders(data || []);
+    };
+
+    loadNotifications();
+
+    const channel = supabase
+      .channel('admin:notifications')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadNotifications)
+      .subscribe();
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!notifRef.current) return;
+      if (!notifRef.current.contains(event.target as Node)) setIsNotifOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+
+    return () => {
+      supabase.removeChannel(channel);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAuthenticated, supabase]);
+
+  const timeAgo = (value: string) => {
+    const diffMs = Date.now() - new Date(value).getTime();
+    if (!Number.isFinite(diffMs) || diffMs < 0) return 'Just now';
+    const minutes = Math.floor(diffMs / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes === 1) return '1 minute ago';
+    if (minutes < 60) return `${minutes} minutes ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours === 1) return '1 hour ago';
+    if (hours < 24) return `${hours} hours ago`;
+    const days = Math.floor(hours / 24);
+    if (days === 1) return '1 day ago';
+    return `${days} days ago`;
+  };
 
   if (isLoading) return <div className="min-h-screen bg-black text-white font-inter" />;
-
-  // Render children normally if on login page
-  if (isLoginPage) {
-    return <div className="min-h-screen bg-black text-white font-inter">{children}</div>;
-  }
 
   if (!isAuthenticated) return null;
 
@@ -135,10 +183,65 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           <div className="flex items-center gap-6">
-            <button className="relative p-2 hover:bg-white/10 rounded-full transition-colors">
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
-            </button>
+            <div className="relative z-[5000]" ref={notifRef}>
+              <button
+                className="relative p-2 hover:bg-white/10 rounded-full transition-colors"
+                onClick={() => setIsNotifOpen((value) => !value)}
+                aria-label="Notifications"
+              >
+                <Bell className="w-5 h-5" />
+                {notifOrders.length > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
+              </button>
+
+              <AnimatePresence>
+                {isNotifOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.98 }}
+                    transition={{ duration: 0.16 }}
+                    className="absolute right-0 mt-3 z-[5001] w-[360px] overflow-hidden rounded-xl border border-white/10 bg-[#050505] shadow-2xl"
+                  >
+                    <div className="border-b border-white/10 px-4 py-3">
+                      <p className="text-xs font-syncopate tracking-widest text-white/60">NOTIFICATIONS</p>
+                    </div>
+
+                    {notifError ? (
+                      <div className="px-4 py-4 text-sm text-red-400">{notifError}</div>
+                    ) : notifOrders.length === 0 ? (
+                      <div className="px-4 py-5 text-sm text-white/50">No notifications yet.</div>
+                    ) : (
+                      <div className="max-h-[360px] overflow-auto">
+                        {notifOrders.map((order) => (
+                          <Link
+                            key={order.id}
+                            href="/admin/orders"
+                            onClick={() => setIsNotifOpen(false)}
+                            className="block border-b border-white/5 px-4 py-3 hover:bg-white/5 transition-colors last:border-b-0"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold truncate">
+                                  {order.order_number || order.id.slice(0, 8)} - {order.customer_name}
+                                </p>
+                                <p className="mt-1 text-xs text-white/50 truncate">
+                                  {order.status} - LE {Number(order.total || 0).toFixed(2)}
+                                </p>
+                              </div>
+                              <p className="text-[10px] text-white/35 font-syncopate tracking-widest whitespace-nowrap">
+                                {timeAgo(order.created_at)}
+                              </p>
+                            </div>
+                          </Link>
+                        ))}
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             
             <div className="flex items-center gap-3 pl-6 border-l border-white/10">
               <div className="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center font-syncopate font-bold text-xs">

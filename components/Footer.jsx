@@ -8,14 +8,15 @@ const socialLinks = [
     label: 'Instagram',
   },
   {
+    // TODO: replace with your official Facebook page URL.
+    href: 'https://www.facebook.com/',
+    icon: 'logo-facebook',
+    label: 'Facebook',
+  },
+  {
     href: 'https://www.tiktok.com/@extra.styling?_r=1&_t=ZS-96QITrolAuK',
     icon: 'logo-tiktok',
     label: 'TikTok',
-  },
-  {
-    href: 'https://wa.me/201001970249',
-    icon: 'logo-whatsapp',
-    label: 'WhatsApp',
   },
 ];
 
@@ -29,7 +30,7 @@ export default function Footer() {
         <div className="footer-col">
           <p className="footer-label">LINKS</p>
           <ul className="footer-links">
-            <li><Link href="/">Home</Link></li>
+            <li><a href="/#top">Home</a></li>
             <li><a href="/#shop">Shop All</a></li>
             <li><Link href="/contact">Contact Us</Link></li>
             <li><Link href="/policies">Policies</Link></li>

@@ -3,6 +3,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import { clearCheckout, loadCheckout, normalizeCheckoutItem } from '@/lib/checkout';
+import { getVisitorId } from '@/lib/analytics/visitor';
 import '@/styles/pages/buynow.css';
 
 function BuyNowContent() {
@@ -18,6 +19,9 @@ function BuyNowContent() {
   const [isCopied, setIsCopied] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [promoInput, setPromoInput] = useState('');
+  const [promoStatus, setPromoStatus] = useState('');
+  const [appliedPromo, setAppliedPromo] = useState(null);
 
   const [formData, setFormData] = useState({
     fullName: '',
@@ -60,7 +64,9 @@ function BuyNowContent() {
     () => checkoutItems.reduce((sum, item) => sum + item.qty, 0),
     [checkoutItems]
   );
+  const discountAmount = appliedPromo?.ok ? Number(appliedPromo.discount_amount || 0) : 0;
   const total = subtotal + shipping;
+  const finalTotal = Math.max(0, (subtotal - discountAmount) + shipping);
   const isTransfer = paymentMethod === 'Instapay' || paymentMethod === 'Vodafone';
 
   const handleCopy = () => {
@@ -111,6 +117,7 @@ function BuyNowContent() {
     orderData.append('subtotal', subtotal.toFixed(2));
     orderData.append('shippingFee', shipping.toFixed(2));
     orderData.append('total', total.toFixed(2));
+    orderData.append('promoCode', appliedPromo?.ok ? appliedPromo.code : promoInput.trim());
     orderData.append('paymentMethod', paymentMethod);
     orderData.append('city', city);
     orderData.append('fullName', formData.fullName);
@@ -118,6 +125,7 @@ function BuyNowContent() {
     orderData.append('email', formData.email);
     orderData.append('address', formData.address);
     orderData.append('notes', formData.notes);
+    orderData.append('visitorId', getVisitorId());
     if (screenshot) orderData.append('receipt', screenshot);
 
     const response = await fetch('/api/orders', {
@@ -138,6 +146,39 @@ function BuyNowContent() {
     }
 
     router.push(`/order-confirmed?order=${result.order?.order_number || result.order?.id || ''}`);
+  };
+
+  const applyPromo = async () => {
+    const code = promoInput.trim().toUpperCase();
+    if (!code) {
+      setPromoStatus('PLEASE ENTER A PROMO CODE.');
+      setAppliedPromo(null);
+      return;
+    }
+
+    setPromoStatus('CHECKING...');
+    setAppliedPromo(null);
+
+    try {
+      const res = await fetch('/api/promo/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, subtotal: Number(subtotal.toFixed(2)) }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || !data?.ok) {
+        setPromoStatus('INVALID OR EXPIRED PROMO CODE.');
+        setAppliedPromo(null);
+        return;
+      }
+
+      setAppliedPromo(data);
+      setPromoStatus(`APPLIED: ${data.code} (-${Number(data.discount_percentage || 0)}%)`);
+    } catch {
+      setPromoStatus('PROMO CHECK FAILED.');
+      setAppliedPromo(null);
+    }
   };
 
   if (checkoutItems.length === 0) {
@@ -184,10 +225,48 @@ function BuyNowContent() {
             <p className="order-label">SHIPPING</p>
             <p className="order-value">{shipping ? `LE ${shipping.toFixed(2)}` : '- SELECT CITY -'}</p>
           </div>
+
+          <div className="order-divider"></div>
+          <div className="order-row">
+            <p className="order-label">PROMO CODE</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+              <input
+                className="form-input"
+                value={promoInput}
+                onChange={(e) => {
+                  setPromoInput(e.target.value.toUpperCase());
+                  setPromoStatus('');
+                  setAppliedPromo(null);
+                }}
+                placeholder="EXTRA20"
+                style={{ width: 140, padding: '10px 12px', fontSize: 11 }}
+              />
+              <button
+                type="button"
+                className="confirm-btn"
+                onClick={applyPromo}
+                style={{ width: 'auto', padding: '10px 14px', fontSize: 10 }}
+              >
+                APPLY
+              </button>
+            </div>
+          </div>
+          {promoStatus && (
+            <p className="form-error" style={{ display: 'block', marginTop: 8 }}>
+              {promoStatus}
+            </p>
+          )}
+
+          {discountAmount > 0 && (
+            <div className="order-row">
+              <p className="order-label">DISCOUNT</p>
+              <p className="order-value">- LE {discountAmount.toFixed(2)}</p>
+            </div>
+          )}
           <div className="order-divider"></div>
           <div className="order-row grand-total">
             <p className="order-label">TOTAL</p>
-            <p className="order-value">{shipping ? `LE ${total.toFixed(2)}` : '-'}</p>
+            <p className="order-value">{shipping ? `LE ${finalTotal.toFixed(2)}` : '-'}</p>
           </div>
         </div>
 

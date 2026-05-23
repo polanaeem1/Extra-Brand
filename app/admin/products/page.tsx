@@ -6,6 +6,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
+import ConfirmDialog from '@/components/admin/ConfirmDialog';
 
 interface Product {
   id: string;
@@ -40,6 +41,7 @@ export default function AdminProducts() {
   const [statusMessage, setStatusMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isDeletingId, setIsDeletingId] = useState('');
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, string>>({});
 
@@ -47,7 +49,7 @@ export default function AdminProducts() {
     name: '', price: '', discount: '', category: '', description: ''
   });
 
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const loadProducts = async () => {
     const { data, error } = await supabase
@@ -79,6 +81,24 @@ export default function AdminProducts() {
   useEffect(() => {
     loadProducts();
   }, []);
+
+  useEffect(() => {
+    const refresh = () => loadProducts();
+
+    const channel = supabase
+      .channel('admin:products')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, refresh)
+      .subscribe();
+
+    const intervalId = window.setInterval(refresh, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
 
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
 
@@ -288,53 +308,55 @@ export default function AdminProducts() {
     if (error) throw error;
   };
 
-  const handleDelete = async (id: string) => {
-    if (confirm('Are you sure you want to permanently delete this product?')) {
-      setStatusMessage('');
-      setIsDeletingId(id);
+  const performDelete = async (id: string) => {
+    setStatusMessage('');
+    setIsDeletingId(id);
 
-      const { data: images, error: imageFetchError } = await supabase
-        .from('product_images')
-        .select('url')
-        .eq('product_id', id);
+    const { data: images, error: imageFetchError } = await supabase
+      .from('product_images')
+      .select('url')
+      .eq('product_id', id);
 
-      if (imageFetchError) {
-        setIsDeletingId('');
-        setStatusMessage(`loading product images: ${imageFetchError.message}`);
-        return;
-      }
-
-      const storagePaths = (images || [])
-        .map((image: any) => getStoragePathFromPublicUrl(image.url))
-        .filter(Boolean) as string[];
-
-      if (storagePaths.length) {
-        const { error: storageError } = await supabase.storage
-          .from('product-images')
-          .remove(storagePaths);
-
-        if (storageError) {
-          setIsDeletingId('');
-          setStatusMessage(`deleting product images from Storage: ${storageError.message}`);
-          return;
-        }
-      }
-
-      const { error } = await supabase
-        .from('products')
-        .delete()
-        .eq('id', id);
-
+    if (imageFetchError) {
       setIsDeletingId('');
-      if (error) {
-        setStatusMessage(`deleting product row: ${error.message}`);
+      setStatusMessage(`loading product images: ${imageFetchError.message}`);
+      return;
+    }
+
+    const storagePaths = (images || [])
+      .map((image: any) => getStoragePathFromPublicUrl(image.url))
+      .filter(Boolean) as string[];
+
+    if (storagePaths.length) {
+      const { error: storageError } = await supabase.storage
+        .from('product-images')
+        .remove(storagePaths);
+
+      if (storageError) {
+        setIsDeletingId('');
+        setStatusMessage(`deleting product images from Storage: ${storageError.message}`);
         return;
       }
-
-      setProducts((current) => current.filter((product) => product.id !== id));
-      setStatusMessage('Product permanently deleted.');
-      await loadProducts();
     }
+
+    const { error } = await supabase
+      .from('products')
+      .delete()
+      .eq('id', id);
+
+    setIsDeletingId('');
+    if (error) {
+      setStatusMessage(`deleting product row: ${error.message}`);
+      return;
+    }
+
+    setProducts((current) => current.filter((product) => product.id !== id));
+    setStatusMessage('Product permanently deleted.');
+    await loadProducts();
+  };
+
+  const handleDelete = async (id: string) => {
+    setDeleteTargetId(id);
   };
 
   const getStoragePathFromPublicUrl = (url: string) => {
@@ -569,6 +591,21 @@ export default function AdminProducts() {
           </>
         )}
       </AnimatePresence>
+
+      <ConfirmDialog
+        open={!!deleteTargetId}
+        title="DELETE PRODUCT"
+        message="Are you sure you want to permanently delete this product? This cannot be undone."
+        confirmText="DELETE"
+        danger
+        busy={!!isDeletingId}
+        onCancel={() => setDeleteTargetId(null)}
+        onConfirm={async () => {
+          const id = deleteTargetId;
+          setDeleteTargetId(null);
+          if (id) await performDelete(id);
+        }}
+      />
     </div>
   );
 }

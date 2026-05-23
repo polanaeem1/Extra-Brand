@@ -19,6 +19,8 @@ export async function POST(request: Request) {
   const subtotal = Number(required(formData.get('subtotal')) || 0);
   const total = Number(required(formData.get('total')) || subtotal + shippingFee);
   const itemsRaw = required(formData.get('items'));
+  const visitorId = required(formData.get('visitorId'));
+  const promoCode = required(formData.get('promoCode'));
 
   let itemsPayload: any[] = [];
   try {
@@ -41,6 +43,10 @@ export async function POST(request: Request) {
 
   if (!customerName || !email || !phone || !address || !city || normalizedItems.length === 0) {
     return NextResponse.json({ error: 'Missing required order fields.' }, { status: 400 });
+  }
+
+  if (!visitorId) {
+    return NextResponse.json({ error: 'Missing visitor id.' }, { status: 400 });
   }
 
   if (!['COD', 'Instapay', 'Vodafone'].includes(paymentMethod)) {
@@ -72,6 +78,8 @@ export async function POST(request: Request) {
 
   const { data, error } = await supabase.rpc('create_order_with_items', {
     order_payload: {
+      visitor_id: visitorId,
+      promo_code: promoCode,
       customer_name: customerName,
       email,
       phone,

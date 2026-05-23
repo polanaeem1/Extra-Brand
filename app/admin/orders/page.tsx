@@ -49,7 +49,7 @@ export default function AdminOrders() {
   const [receiptPreviewUrl, setReceiptPreviewUrl] = useState('');
   const [receiptError, setReceiptError] = useState('');
 
-  const supabase = createClient();
+  const [supabase] = useState(() => createClient());
 
   const loadOrders = async () => {
     const { data } = await supabase
@@ -86,6 +86,23 @@ export default function AdminOrders() {
   useEffect(() => {
     loadOrders();
   }, []);
+
+  useEffect(() => {
+    const refresh = () => loadOrders();
+
+    const channel = supabase
+      .channel('admin:orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refresh)
+      .subscribe();
+
+    const intervalId = window.setInterval(refresh, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+      supabase.removeChannel(channel);
+    };
+  }, [supabase]);
 
   const filteredOrders = orders.filter((order) => {
     const needle = search.toLowerCase();
