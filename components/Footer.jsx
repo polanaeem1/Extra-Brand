@@ -9,7 +9,7 @@ const socialLinks = [
   },
   {
     // TODO: replace with your official Facebook page URL.
-    href: 'https://www.facebook.com/',
+    href: 'https://www.facebook.com/share/1JgCRRXgoS/?mibextid=wwXIfr',
     icon: 'logo-facebook',
     label: 'Facebook',
   },

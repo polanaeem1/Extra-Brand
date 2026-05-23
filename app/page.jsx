@@ -9,7 +9,7 @@ import '@/styles/pages/home.css';
 const socialLinks = [
   { href: 'https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt', icon: 'logo-instagram', label: 'Instagram' },
   // TODO: replace with your official Facebook page URL.
-  { href: 'https://www.facebook.com/', icon: 'logo-facebook', label: 'Facebook' },
+  { href: 'https://www.facebook.com/share/1JgCRRXgoS/?mibextid=wwXIfr', icon: 'logo-facebook', label: 'Facebook' },
   { href: 'https://www.tiktok.com/@extra.styling?_r=1&_t=ZS-96QITrolAuK', icon: 'logo-tiktok', label: 'TikTok' },
 ];
 
@@ -18,6 +18,7 @@ export default function Home() {
   const [email, setEmail] = useState('');
   const [products, setProducts] = useState([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const [instaUrls, setInstaUrls] = useState([]);
   
   useEffect(() => {
     let isMounted = true;
@@ -30,7 +31,35 @@ export default function Home() {
         setIsLoadingProducts(false);
       });
 
+    const refreshInsta = async () => {
+      const { data, error } = await supabase.storage.from('product-instagram').list('', {
+        limit: 50,
+        offset: 0,
+        sortBy: { column: 'name', order: 'asc' },
+      });
+
+      if (!isMounted) return;
+
+      if (error) {
+        // Keep UI stable if Storage list isn't allowed yet.
+        setInstaUrls([]);
+        return;
+      }
+
+      const files = (data || [])
+        .map((f) => (f?.name ? String(f.name) : ''))
+        .filter((name) => !!name && name !== '.emptyFolderPlaceholder')
+        .filter((name) => /\.(jpe?g|png|webp|gif)$/i.test(name));
+
+      const urls = files
+        .map((name) => supabase.storage.from('product-instagram').getPublicUrl(name)?.data?.publicUrl)
+        .filter(Boolean);
+
+      setInstaUrls(urls);
+    };
+
     refresh();
+    refreshInsta();
 
     const channel = supabase
       .channel('public:products')
@@ -40,7 +69,10 @@ export default function Home() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors' }, refresh)
       .subscribe();
 
-    const intervalId = window.setInterval(refresh, 30000);
+    const intervalId = window.setInterval(() => {
+      refresh();
+      refreshInsta();
+    }, 30000);
 
     return () => {
       isMounted = false;
@@ -182,18 +214,29 @@ export default function Home() {
         </div>
         <div className="insta-slider-wrap">
           <div className="insta-slider" id="instaSlider">
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-1.jpeg" alt="EXTRA Instagram lookbook 1" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-2.jpeg" alt="EXTRA Instagram lookbook 2" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-3.jpeg" alt="EXTRA Instagram lookbook 3" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-4.jpeg" alt="EXTRA Instagram lookbook 4" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-5.jpeg" alt="EXTRA Instagram lookbook 5" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-6.jpeg" alt="EXTRA Instagram lookbook 6" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-1.jpeg" alt="EXTRA Instagram lookbook 1 repeat" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-2.jpeg" alt="EXTRA Instagram lookbook 2 repeat" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-3.jpeg" alt="EXTRA Instagram lookbook 3 repeat" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-4.jpeg" alt="EXTRA Instagram lookbook 4 repeat" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-5.jpeg" alt="EXTRA Instagram lookbook 5 repeat" /></a>
-            <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-card" rel="noreferrer"><img src="/assets/images/insta-6.jpeg" alt="EXTRA Instagram lookbook 6 repeat" /></a>
+            {(() => {
+              const fallback = [
+                '/assets/images/insta-1.jpeg',
+                '/assets/images/insta-2.jpeg',
+                '/assets/images/insta-3.jpeg',
+                '/assets/images/insta-4.jpeg',
+                '/assets/images/insta-5.jpeg',
+                '/assets/images/insta-6.jpeg',
+              ];
+              const base = instaUrls.length ? instaUrls : fallback;
+              const slides = base.concat(base);
+              return slides.map((url, idx) => (
+                <a
+                  key={`${url}-${idx}`}
+                  href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt"
+                  target="_blank"
+                  className="insta-card"
+                  rel="noreferrer"
+                >
+                  <img src={url} alt={`EXTRA Instagram lookbook ${idx + 1}`} />
+                </a>
+              ));
+            })()}
           </div>
         </div>
         <a href="https://www.instagram.com/extra.styling?igsh=emplOWhiaGFvcnlt" target="_blank" className="insta-btn" rel="noreferrer">

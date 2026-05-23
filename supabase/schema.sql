@@ -697,11 +697,25 @@ for select using (public.is_admin());
 
 -- Create these buckets in Storage if they do not exist:
 -- product-images: public
+-- product-instagram: public (home page Instagram slider)
 -- payment-receipts: private
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'product-images',
   'product-images',
+  true,
+  5242880,
+  array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'product-instagram',
+  'product-instagram',
   true,
   5242880,
   array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
@@ -727,6 +741,10 @@ on conflict (id) do update set
 drop policy if exists "product_images_public_read" on storage.objects;
 create policy "product_images_public_read" on storage.objects
 for select using (bucket_id = 'product-images');
+
+drop policy if exists "product_instagram_public_read" on storage.objects;
+create policy "product_instagram_public_read" on storage.objects
+for select using (bucket_id = 'product-instagram');
 
 drop policy if exists "product_images_admin_insert" on storage.objects;
 create policy "product_images_admin_insert" on storage.objects
@@ -768,6 +786,55 @@ drop policy if exists "product_images_admin_delete" on storage.objects;
 create policy "product_images_admin_delete" on storage.objects
 for delete using (
   bucket_id = 'product-images'
+  and exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+      and status = 'active'
+  )
+);
+
+drop policy if exists "product_instagram_admin_insert" on storage.objects;
+create policy "product_instagram_admin_insert" on storage.objects
+for insert with check (
+  bucket_id = 'product-instagram'
+  and exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+      and status = 'active'
+  )
+);
+
+drop policy if exists "product_instagram_admin_update" on storage.objects;
+create policy "product_instagram_admin_update" on storage.objects
+for update using (
+  bucket_id = 'product-instagram'
+  and exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+      and status = 'active'
+  )
+)
+with check (
+  bucket_id = 'product-instagram'
+  and exists (
+    select 1
+    from public.profiles
+    where id = auth.uid()
+      and role = 'admin'
+      and status = 'active'
+  )
+);
+
+drop policy if exists "product_instagram_admin_delete" on storage.objects;
+create policy "product_instagram_admin_delete" on storage.objects
+for delete using (
+  bucket_id = 'product-instagram'
   and exists (
     select 1
     from public.profiles
