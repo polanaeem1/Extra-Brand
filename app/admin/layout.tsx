@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
 import { logSupabaseRequest } from '@/lib/supabase/debug';
+import { authRateLimitMessage } from '@/lib/supabase/authState';
 import { 
   LayoutDashboard, ShoppingBag, Package, 
   Users, LineChart, LogOut, Bell, Search, Menu, Tag, MessageSquare
@@ -27,6 +28,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [authMessage, setAuthMessage] = useState('');
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifOrders, setNotifOrders] = useState<any[]>([]);
   const [notifMessages, setNotifMessages] = useState<any[]>([]);
@@ -38,8 +40,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     let isMounted = true;
     let retryTimer: number | null = null;
 
-    const verifyAdmin = (allowRetry = true) => getCurrentAdmin().then(({ isAdmin }) => {
+    const verifyAdmin = (allowRetry = true) => getCurrentAdmin().then(({ isAdmin, rateLimited }) => {
       if (!isMounted) return;
+
+      if (rateLimited) {
+        setAuthMessage(authRateLimitMessage());
+        setIsLoading(false);
+        return;
+      }
 
       if (!isAdmin) {
         if (allowRetry) {
@@ -53,6 +61,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       setIsAuthenticated(true);
       setIsLoading(false);
+      setAuthMessage('');
     });
 
     verifyAdmin(true);
@@ -144,6 +153,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   if (isLoading) return <div className="min-h-screen bg-black text-white font-inter" />;
+
+  if (authMessage) {
+    return (
+      <div className="min-h-screen bg-black text-white font-inter flex items-center justify-center p-6 text-center">
+        <p className="text-sm text-white/70">{authMessage}</p>
+      </div>
+    );
+  }
 
   if (!isAuthenticated) return null;
 

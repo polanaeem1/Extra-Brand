@@ -2,6 +2,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { supabaseAuthOptions, supabaseCookieOptions } from './lib/supabase/options';
 
+const AUTH_COOLDOWN_COOKIE = 'extra-auth-cooldown-until';
+const AUTH_COOLDOWN_MS = 5 * 60 * 1000;
+
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
     request,
@@ -35,6 +38,11 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
+  const cooldownUntil = Number(request.cookies.get(AUTH_COOLDOWN_COOKIE)?.value || 0);
+  if (cooldownUntil && Date.now() < cooldownUntil) {
+    return response;
+  }
+
   const {
     data: { user },
     error: userError,
@@ -44,6 +52,11 @@ export async function proxy(request: NextRequest) {
     const status = (userError as any)?.status;
     const message = String(userError.message || '').toLowerCase();
     if (status === 429 || message.includes('too many') || message.includes('rate limit')) {
+      response.cookies.set(AUTH_COOLDOWN_COOKIE, String(Date.now() + AUTH_COOLDOWN_MS), {
+        path: '/',
+        sameSite: 'lax',
+        maxAge: AUTH_COOLDOWN_MS / 1000,
+      });
       return response;
     }
   }

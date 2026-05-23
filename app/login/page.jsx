@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
-import { authRateLimitMessage, isRateLimitError } from '@/lib/supabase/authState';
+import { authRateLimitMessage, handleAuthRateLimit, isAuthCoolingDown, isRateLimitError } from '@/lib/supabase/authState';
 import '@/styles/pages/login.css';
 
 export default function LoginPage() {
@@ -27,6 +27,8 @@ export default function LoginPage() {
       }
     })();
 
+    if (isAuthCoolingDown()) return;
+
     getCurrentAdmin()
       .then(({ user, isAdmin }) => {
         if (!user || redirectingRef.current) return;
@@ -39,6 +41,10 @@ export default function LoginPage() {
 
   const handleLogin = async () => {
     if (submitLockRef.current || isSubmitting || redirectingRef.current) return;
+    if (isAuthCoolingDown()) {
+      setErrorMsg(authRateLimitMessage());
+      return;
+    }
 
     if (!email || !password) {
       setErrorMsg('PLEASE FILL IN ALL FIELDS.');
@@ -60,6 +66,7 @@ export default function LoginPage() {
     });
 
     if (error) {
+      if (isRateLimitError(error)) handleAuthRateLimit(error);
       setErrorMsg(isRateLimitError(error) ? authRateLimitMessage() : error.message.toUpperCase());
       setIsSubmitting(false);
       submitLockRef.current = false;

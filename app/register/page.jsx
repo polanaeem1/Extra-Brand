@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
-import { authRateLimitMessage, isRateLimitError } from '@/lib/supabase/authState';
+import { authRateLimitMessage, handleAuthRateLimit, isAuthCoolingDown, isRateLimitError } from '@/lib/supabase/authState';
 import '@/styles/pages/register.css';
 
 export default function RegisterPage() {
@@ -19,6 +19,8 @@ export default function RegisterPage() {
   const submitLockRef = useRef(false);
 
   useEffect(() => {
+    if (isAuthCoolingDown()) return;
+
     getCurrentAdmin().then(async ({ user, isAdmin }) => {
       if (!user) return;
       router.replace(isAdmin ? '/admin' : '/');
@@ -27,6 +29,10 @@ export default function RegisterPage() {
 
   const handleRegister = async () => {
     if (submitLockRef.current || isSubmitting) return;
+    if (isAuthCoolingDown()) {
+      setErrorMsg(authRateLimitMessage());
+      return;
+    }
 
     const { firstName, lastName, email, phone, password, confirm } = formData;
     if (!firstName || !lastName || !email || !phone || !password || !confirm) {
@@ -74,6 +80,7 @@ export default function RegisterPage() {
     });
 
     if (error) {
+      if (isRateLimitError(error)) handleAuthRateLimit(error);
       setErrorMsg(isRateLimitError(error) ? authRateLimitMessage() : error.message.toUpperCase());
       setIsSubmitting(false);
       submitLockRef.current = false;

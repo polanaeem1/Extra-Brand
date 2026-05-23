@@ -1,5 +1,5 @@
 import { createClient } from './browser';
-import { getSessionOnce, isRateLimitError } from './authState';
+import { authRateLimitMessage, getSessionOnce, isAuthCoolingDown, isRateLimitError } from './authState';
 
 let cachedAdminResult: {
   user: any;
@@ -14,6 +14,10 @@ const CACHE_MS = 60_000;
 
 export async function getCurrentAdmin() {
   const now = Date.now();
+  if (isAuthCoolingDown()) {
+    return cachedAdminResult || { user: null, profile: null, isAdmin: false, rateLimited: true };
+  }
+
   if (cachedAdminResult && now - cachedAt < CACHE_MS) {
     return cachedAdminResult;
   }
@@ -61,6 +65,6 @@ export function clearCurrentAdminCache() {
 }
 
 export function adminAuthErrorMessage(error: any) {
-  if (isRateLimitError(error)) return 'Too many attempts. Please wait a few minutes and try again.';
+  if (isRateLimitError(error)) return authRateLimitMessage();
   return error?.message || 'Unable to check admin session.';
 }

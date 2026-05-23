@@ -19,5 +19,16 @@ export function createClient() {
     auth: supabaseAuthOptions,
   });
 
+  if (typeof window !== 'undefined') {
+    try {
+      const cooldownUntil = Number(localStorage.getItem('extra_auth_cooldown_until') || 0);
+      if (cooldownUntil && Date.now() < cooldownUntil) {
+        browserClient.auth.stopAutoRefresh();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   return browserClient;
 }
