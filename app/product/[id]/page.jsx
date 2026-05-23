@@ -246,14 +246,13 @@ export default function ProductPage() {
           ))}
         </div>
 
-        {false && (
+        {!!(product.reviews && product.reviews.length) && (
         <div className="reviews-section">
           <h2 className="reviews-title">CUSTOMER REVIEWS</h2>
           <div className="reviews-track">
-            {[
-            ].map((rev, i) => (
-              <div className="review-card" key={i}>
-                <div className="review-avatar">{rev.letter}</div>
+            {product.reviews.map((rev) => (
+              <div className="review-card" key={rev.id}>
+                <div className="review-avatar">{(rev.name || '?').slice(0, 1).toUpperCase()}</div>
                 <div className="review-body">
                   <p className="review-name">{rev.name}</p>
                   <p className="review-stars">★★★★★</p>

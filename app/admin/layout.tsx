@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
 import { 
   LayoutDashboard, ShoppingBag, Package, 
-  Users, LineChart, LogOut, Bell, Search, Menu, Tag
+  Users, LineChart, LogOut, Bell, Search, Menu, Tag, MessageSquare
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -15,6 +15,7 @@ const navItems = [
   { name: 'Orders', href: '/admin/orders', icon: ShoppingBag },
   { name: 'Products', href: '/admin/products', icon: Package },
   { name: 'Promo Codes', href: '/admin/promos', icon: Tag },
+  { name: 'Messages', href: '/admin/messages', icon: MessageSquare },
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Analytics', href: '/admin/analytics', icon: LineChart },
 ];
@@ -27,6 +28,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [isLoading, setIsLoading] = useState(true);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifOrders, setNotifOrders] = useState<any[]>([]);
+  const [notifMessages, setNotifMessages] = useState<any[]>([]);
   const [notifError, setNotifError] = useState('');
   const notifRef = useRef<HTMLDivElement | null>(null);
   const [supabase] = useState(() => createClient());
@@ -62,19 +64,31 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!isAuthenticated) return;
 
     const loadNotifications = async () => {
-      const { data, error } = await supabase
-        .from('orders')
-        .select('id,order_number,customer_name,status,created_at,total')
-        .order('created_at', { ascending: false })
-        .limit(6);
+      const [ordersResult, messagesResult] = await Promise.all([
+        supabase
+          .from('orders')
+          .select('id,order_number,customer_name,status,created_at,total')
+          .order('created_at', { ascending: false })
+          .limit(6),
+        supabase
+          .from('contact_messages')
+          .select('id,name,email,message,is_read,created_at')
+          .order('created_at', { ascending: false })
+          .limit(6),
+      ]);
 
-      if (error) {
-        setNotifError(error.message);
+      if (ordersResult.error) {
+        setNotifError(ordersResult.error.message);
+        return;
+      }
+      if (messagesResult.error) {
+        setNotifError(messagesResult.error.message);
         return;
       }
 
       setNotifError('');
-      setNotifOrders(data || []);
+      setNotifOrders(ordersResult.data || []);
+      setNotifMessages(messagesResult.data || []);
     };
 
     loadNotifications();
@@ -82,6 +96,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     const channel = supabase
       .channel('admin:notifications')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadNotifications)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_messages' }, loadNotifications)
       .subscribe();
 
     const handleClickOutside = (event: MouseEvent) => {
@@ -256,14 +271,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           <div className="flex items-center gap-6">
-            <div className="relative z-[5000]" ref={notifRef}>
+            <div className="relative z-30" ref={notifRef}>
               <button
                 className="relative p-2 hover:bg-white/10 rounded-full transition-colors"
                 onClick={() => setIsNotifOpen((value) => !value)}
                 aria-label="Notifications"
               >
                 <Bell className="w-5 h-5" />
-                {notifOrders.length > 0 && (
+                {(notifOrders.length > 0 || notifMessages.some((m) => !m.is_read)) && (
                   <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
                 )}
               </button>
@@ -275,7 +290,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.98 }}
                     transition={{ duration: 0.16 }}
-                    className="absolute right-0 mt-3 z-[5001] w-[360px] overflow-hidden rounded-xl border border-white/10 bg-[#050505] shadow-2xl"
+                    className="absolute right-0 mt-3 z-40 w-[360px] overflow-hidden rounded-xl border border-white/10 bg-[#050505] shadow-2xl"
                   >
                     <div className="border-b border-white/10 px-4 py-3">
                       <p className="text-xs font-syncopate tracking-widest text-white/60">NOTIFICATIONS</p>
@@ -283,16 +298,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
                     {notifError ? (
                       <div className="px-4 py-4 text-sm text-red-400">{notifError}</div>
-                    ) : notifOrders.length === 0 ? (
+                    ) : notifOrders.length === 0 && notifMessages.length === 0 ? (
                       <div className="px-4 py-5 text-sm text-white/50">No notifications yet.</div>
                     ) : (
                       <div className="max-h-[360px] overflow-auto">
+                        {notifOrders.length > 0 && (
+                          <div className="px-4 pt-4 pb-2 text-[10px] text-white/40 font-syncopate tracking-widest">
+                            RECENT ORDERS
+                          </div>
+                        )}
                         {notifOrders.map((order) => (
                           <Link
                             key={order.id}
                             href="/admin/orders"
                             onClick={() => setIsNotifOpen(false)}
-                            className="block border-b border-white/5 px-4 py-3 hover:bg-white/5 transition-colors last:border-b-0"
+                            className="block border-b border-white/5 px-4 py-3 hover:bg-white/5 transition-colors"
                           >
                             <div className="flex items-start justify-between gap-4">
                               <div className="min-w-0">
@@ -305,6 +325,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                               </div>
                               <p className="text-[10px] text-white/35 font-syncopate tracking-widest whitespace-nowrap">
                                 {timeAgo(order.created_at)}
+                              </p>
+                            </div>
+                          </Link>
+                        ))}
+
+                        {notifMessages.length > 0 && (
+                          <div className="px-4 pt-4 pb-2 text-[10px] text-white/40 font-syncopate tracking-widest">
+                            CONTACT MESSAGES
+                          </div>
+                        )}
+                        {notifMessages.map((msg) => (
+                          <Link
+                            key={msg.id}
+                            href="/admin/messages"
+                            onClick={() => setIsNotifOpen(false)}
+                            className="block border-b border-white/5 px-4 py-3 hover:bg-white/5 transition-colors last:border-b-0"
+                          >
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <p className="text-sm font-bold truncate">
+                                  {!msg.is_read ? 'NEW - ' : ''}
+                                  {msg.name} ({msg.email})
+                                </p>
+                                <p className="mt-1 text-xs text-white/50 truncate">{msg.message}</p>
+                              </div>
+                              <p className="text-[10px] text-white/35 font-syncopate tracking-widest whitespace-nowrap">
+                                {timeAgo(msg.created_at)}
                               </p>
                             </div>
                           </Link>

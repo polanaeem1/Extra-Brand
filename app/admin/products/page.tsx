@@ -21,6 +21,7 @@ interface Product {
   description: string;
   variants: { size: string; stock: number }[];
   colorVariants: { color: string; stock: number }[];
+  reviews?: { id: string; customer_name: string; rating: number; review_text: string; is_approved: boolean; created_at: string }[];
 }
 
 type UploadedImage = {
@@ -70,6 +71,8 @@ export default function AdminProducts() {
   const [sizeStock, setSizeStock] = useState<Record<string, string>>({});
   const [selectedColors, setSelectedColors] = useState<string[]>(['Black']);
   const [colorStock, setColorStock] = useState<Record<string, string>>({ Black: '1' });
+  const [reviewDraft, setReviewDraft] = useState({ customer_name: '', rating: 5, review_text: '', is_approved: true });
+  const [isSavingReview, setIsSavingReview] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '', price: '', discount: '', category: '', description: ''
@@ -80,7 +83,7 @@ export default function AdminProducts() {
   const loadProducts = async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('*, product_images(*), product_variants(*), product_colors(*)')
+      .select('*, product_images(*), product_variants(*), product_colors(*), product_reviews(*)')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -102,6 +105,14 @@ export default function AdminProducts() {
       description: product.description || '',
       variants: (product.product_variants || []).map((variant: any) => ({ size: variant.size, stock: Number(variant.stock || 0) })),
       colorVariants: (product.product_colors || []).map((c: any) => ({ color: c.color, stock: Number(c.stock || 0) })),
+      reviews: (product.product_reviews || []).map((r: any) => ({
+        id: r.id,
+        customer_name: r.customer_name,
+        rating: Number(r.rating || 5),
+        review_text: r.review_text,
+        is_approved: !!r.is_approved,
+        created_at: r.created_at,
+      })),
     })));
   };
 
@@ -118,6 +129,7 @@ export default function AdminProducts() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_reviews' }, refresh)
       .subscribe();
 
     const intervalId = window.setInterval(refresh, 30000);
@@ -196,6 +208,13 @@ export default function AdminProducts() {
       setSizeStock(nextStock);
       setSelectedColors(nextColors);
       setColorStock(nextColorStock);
+      // Keep the modal's review table in sync with the latest loaded data.
+      if (prod.id) {
+        setTimeout(() => {
+          loadReviewsForProduct(prod.id).catch(() => {});
+        }, 0);
+      }
+      setReviewDraft({ customer_name: '', rating: 5, review_text: '', is_approved: true });
     } else {
       setEditingProd(null);
       setFormData({ name: '', price: '', discount: '', category: '', description: '' });
@@ -203,6 +222,7 @@ export default function AdminProducts() {
       setSizeStock({});
       setSelectedColors(['Black']);
       setColorStock({ Black: '1' });
+      setReviewDraft({ customer_name: '', rating: 5, review_text: '', is_approved: true });
     }
     setSelectedFiles([]);
     setIsModalOpen(true);
@@ -276,6 +296,88 @@ export default function AdminProducts() {
         .in('color', toDelete);
       if (deleteError) throw deleteError;
     }
+  };
+
+  const loadReviewsForProduct = async (productId: string) => {
+    const { data, error } = await supabase
+      .from('product_reviews')
+      .select('id,customer_name,rating,review_text,is_approved,created_at')
+      .eq('product_id', productId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    if (editingProd?.id === productId) {
+      setEditingProd((current) => (current ? ({ ...current, reviews: (data || []) as any } as any) : current));
+    }
+
+    setProducts((current) =>
+      current.map((p) =>
+        p.id === productId
+          ? ({ ...p, reviews: (data || []) as any } as any)
+          : p
+      )
+    );
+  };
+
+  const addReview = async () => {
+    if (!editingProd?.id) return;
+    const name = reviewDraft.customer_name.trim();
+    const text = reviewDraft.review_text.trim();
+    const rating = Number(reviewDraft.rating);
+
+    if (!name || !text || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+      setStatusMessage('Please enter a reviewer name, rating (1-5), and review text.');
+      return;
+    }
+
+    setIsSavingReview(true);
+    setStatusMessage('');
+
+    const { error } = await supabase.from('product_reviews').insert({
+      product_id: editingProd.id,
+      customer_name: name,
+      rating,
+      review_text: text,
+      is_approved: !!reviewDraft.is_approved,
+    });
+
+    setIsSavingReview(false);
+
+    if (error) {
+      setStatusMessage(`saving review: ${error.message}`);
+      return;
+    }
+
+    setReviewDraft({ customer_name: '', rating: 5, review_text: '', is_approved: true });
+    await loadReviewsForProduct(editingProd.id);
+    setStatusMessage('Review added.');
+  };
+
+  const toggleReviewApproval = async (reviewId: string, nextApproved: boolean) => {
+    if (!editingProd?.id) return;
+    const { error } = await supabase
+      .from('product_reviews')
+      .update({ is_approved: nextApproved, updated_at: new Date().toISOString() })
+      .eq('id', reviewId);
+
+    if (error) {
+      setStatusMessage(`updating review: ${error.message}`);
+      return;
+    }
+
+    await loadReviewsForProduct(editingProd.id);
+  };
+
+  const deleteReview = async (reviewId: string) => {
+    if (!editingProd?.id) return;
+    const { error } = await supabase.from('product_reviews').delete().eq('id', reviewId);
+    if (error) {
+      setStatusMessage(`deleting review: ${error.message}`);
+      return;
+    }
+    await loadReviewsForProduct(editingProd.id);
+    setStatusMessage('Review deleted.');
   };
 
   const handleSave = async () => {
@@ -712,6 +814,129 @@ export default function AdminProducts() {
                       ))}
                     </div>
                   )}
+
+                  <div className="border-t border-white/10 pt-6 mt-6">
+                    <label className="block text-xs font-syncopate text-white/70 tracking-widest mb-3">REVIEWS</label>
+
+                    {!editingProd ? (
+                      <p className="text-sm text-white/50">Save the product first to add reviews.</p>
+                    ) : (
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-syncopate text-white/70 tracking-widest mb-2">NAME</label>
+                            <input
+                              type="text"
+                              value={reviewDraft.customer_name}
+                              onChange={(e) => setReviewDraft({ ...reviewDraft, customer_name: e.target.value })}
+                              className="w-full bg-black border border-white/10 rounded-md px-4 py-2 text-sm focus:outline-none focus:border-white/40 transition-colors"
+                              placeholder="e.g. FADI"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-syncopate text-white/70 tracking-widest mb-2">RATING</label>
+                            <input
+                              type="number"
+                              min="1"
+                              max="5"
+                              step="1"
+                              value={reviewDraft.rating}
+                              onChange={(e) => setReviewDraft({ ...reviewDraft, rating: Number(e.target.value) })}
+                              className="w-full bg-black border border-white/10 rounded-md px-4 py-2 text-sm focus:outline-none focus:border-white/40 transition-colors"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-syncopate text-white/70 tracking-widest mb-2">REVIEW</label>
+                          <textarea
+                            rows={3}
+                            value={reviewDraft.review_text}
+                            onChange={(e) => setReviewDraft({ ...reviewDraft, review_text: e.target.value })}
+                            className="w-full bg-black border border-white/10 rounded-md px-4 py-2 text-sm focus:outline-none focus:border-white/40 transition-colors"
+                            placeholder="Write the review..."
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between gap-4">
+                          <label className="flex items-center gap-2 text-xs text-white/70">
+                            <input
+                              type="checkbox"
+                              checked={reviewDraft.is_approved}
+                              onChange={(e) => setReviewDraft({ ...reviewDraft, is_approved: e.target.checked })}
+                            />
+                            <span className="font-syncopate tracking-widest">APPROVED</span>
+                          </label>
+                          <button
+                            type="button"
+                            onClick={addReview}
+                            disabled={isSavingReview}
+                            className="bg-white text-black font-syncopate text-xs font-bold tracking-widest px-6 py-2 rounded-md hover:bg-white/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                          >
+                            {isSavingReview ? 'SAVING...' : 'ADD REVIEW'}
+                          </button>
+                        </div>
+
+                        <div className="bg-black/40 border border-white/10 rounded-xl overflow-hidden">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-sm">
+                              <thead className="bg-white/5 border-b border-white/10 text-xs font-syncopate tracking-widest text-white/50">
+                                <tr>
+                                  <th className="px-4 py-3 font-normal">NAME</th>
+                                  <th className="px-4 py-3 font-normal">RATING</th>
+                                  <th className="px-4 py-3 font-normal">APPROVED</th>
+                                  <th className="px-4 py-3 font-normal">DATE</th>
+                                  <th className="px-4 py-3 font-normal text-right">ACTIONS</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-white/10">
+                                {(editingProd.reviews || []).length === 0 ? (
+                                  <tr>
+                                    <td colSpan={5} className="px-4 py-6 text-center text-white/50">
+                                      No reviews yet.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  (editingProd.reviews || []).map((rev) => (
+                                    <tr key={rev.id} className="hover:bg-white/5 transition-colors">
+                                      <td className="px-4 py-3 font-bold">{rev.customer_name}</td>
+                                      <td className="px-4 py-3 text-white/70">{rev.rating}/5</td>
+                                      <td className="px-4 py-3">
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleReviewApproval(rev.id, !rev.is_approved)}
+                                          className={`px-3 py-1 rounded-full text-xs font-bold border ${
+                                            rev.is_approved
+                                              ? 'bg-green-500/10 text-green-500 border-green-500/20'
+                                              : 'bg-red-500/10 text-red-500 border-red-500/20'
+                                          }`}
+                                        >
+                                          {rev.is_approved ? 'YES' : 'NO'}
+                                        </button>
+                                      </td>
+                                      <td className="px-4 py-3 text-white/60 text-xs">
+                                        {new Date(rev.created_at).toLocaleDateString()}
+                                      </td>
+                                      <td className="px-4 py-3 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => deleteReview(rev.id)}
+                                          className="p-2 hover:bg-red-500/10 rounded-md transition-colors text-white/50 hover:text-red-500"
+                                          title="Delete"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

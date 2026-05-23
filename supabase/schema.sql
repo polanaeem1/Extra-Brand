@@ -61,6 +61,36 @@ create table if not exists public.product_colors (
 create index if not exists product_colors_product_id_idx on public.product_colors (product_id);
 create index if not exists product_colors_color_idx on public.product_colors (color);
 
+-- Customer reviews (admin-managed for now).
+create table if not exists public.product_reviews (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.products(id) on delete cascade,
+  customer_name text not null,
+  rating int not null check (rating >= 1 and rating <= 5),
+  review_text text not null,
+  is_approved boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists product_reviews_product_id_idx on public.product_reviews (product_id);
+create index if not exists product_reviews_created_at_idx on public.product_reviews (created_at desc);
+
+-- Contact messages (submitted from Contact Us page).
+create table if not exists public.contact_messages (
+  id uuid primary key default gen_random_uuid(),
+  visitor_id text,
+  user_id uuid references auth.users(id),
+  name text not null,
+  email text not null,
+  message text not null,
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists contact_messages_created_at_idx on public.contact_messages (created_at desc);
+create index if not exists contact_messages_is_read_idx on public.contact_messages (is_read);
+
 -- Promo codes (admin-managed, validated on the backend).
 create table if not exists public.promo_codes (
   id uuid primary key default gen_random_uuid(),
@@ -132,6 +162,18 @@ create table if not exists public.order_items (
   line_total numeric(10,2) not null,
   created_at timestamptz not null default now()
 );
+
+-- Backward-compatible: ensure deleting products/variants does not break order history.
+-- Orders keep product_name/size/unit_price snapshots, so FK can safely set null.
+alter table public.order_items drop constraint if exists order_items_product_id_fkey;
+alter table public.order_items
+add constraint order_items_product_id_fkey
+foreign key (product_id) references public.products(id) on delete set null;
+
+alter table public.order_items drop constraint if exists order_items_variant_id_fkey;
+alter table public.order_items
+add constraint order_items_variant_id_fkey
+foreign key (variant_id) references public.product_variants(id) on delete set null;
 
 create table if not exists public.page_views (
   id uuid primary key default gen_random_uuid(),
@@ -223,6 +265,11 @@ for each row execute function public.set_updated_at();
 drop trigger if exists product_colors_set_updated_at on public.product_colors;
 create trigger product_colors_set_updated_at
 before update on public.product_colors
+for each row execute function public.set_updated_at();
+
+drop trigger if exists product_reviews_set_updated_at on public.product_reviews;
+create trigger product_reviews_set_updated_at
+before update on public.product_reviews
 for each row execute function public.set_updated_at();
 
 create or replace function public.validate_promo_code(p_code text, p_subtotal numeric)
@@ -471,6 +518,8 @@ alter table public.products enable row level security;
 alter table public.product_images enable row level security;
 alter table public.product_variants enable row level security;
 alter table public.product_colors enable row level security;
+alter table public.product_reviews enable row level security;
+alter table public.contact_messages enable row level security;
 alter table public.promo_codes enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
@@ -543,6 +592,39 @@ for select using (
 
 drop policy if exists "product_colors_admin_write" on public.product_colors;
 create policy "product_colors_admin_write" on public.product_colors
+for all using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "product_reviews_public_read" on public.product_reviews;
+create policy "product_reviews_public_read" on public.product_reviews
+for select using (
+  public.is_admin()
+  or (
+    is_approved = true
+    and exists (select 1 from public.products p where p.id = product_id and p.is_active = true)
+  )
+);
+
+drop policy if exists "product_reviews_admin_write" on public.product_reviews;
+create policy "product_reviews_admin_write" on public.product_reviews
+for all using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "contact_messages_public_insert" on public.contact_messages;
+create policy "contact_messages_public_insert" on public.contact_messages
+for insert with check (
+  name is not null
+  and length(trim(name)) > 0
+  and email is not null
+  and length(trim(email)) > 0
+  and message is not null
+  and length(trim(message)) > 0
+  and (
+    (auth.uid() is null and user_id is null)
+    or (auth.uid() = user_id)
+  )
+);
+
+drop policy if exists "contact_messages_admin_all" on public.contact_messages;
+create policy "contact_messages_admin_all" on public.contact_messages
 for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "promo_codes_admin_all" on public.promo_codes;
@@ -739,6 +821,18 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.product_colors;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.product_reviews;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.contact_messages;
 exception when duplicate_object then null;
 end $$;
 

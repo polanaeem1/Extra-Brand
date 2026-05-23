@@ -212,8 +212,16 @@ function BuyNowContent() {
           <div className="order-divider"></div>
           {checkoutItems.map((item, index) => (
             <div key={`${item.name}-${item.size}-${index}`} className="order-row">
-              <p className="order-label">{item.name} / {item.size}</p>
-              <p className="order-value">{item.qty} x LE {item.price.toFixed(2)}</p>
+              <div className='order-details'>
+                <div className='order-details-size'>
+            <p className="order-label">SIZE</p>
+              <p className="order-value">{item.size}</p>
+                </div>
+                <div className='order-details-quantity'>
+              <p className="order-label">QUANTITY</p>
+              <p className="order-value">{item.qty} </p>
+                </div>
+              </div>
             </div>
           ))}
           <div className="order-divider"></div>
@@ -299,16 +307,39 @@ function BuyNowContent() {
               setCity(e.target.selectedOptions[0]?.textContent || '');
             }}>
               <option value="">SELECT YOUR CITY</option>
-              <optgroup label="ZONE A - LE 75">
-                <option value="75">CAIRO</option><option value="75">GIZA</option><option value="75">ALEXANDRIA</option>
+              <optgroup label="── ZONE A — LE 75">
+                <option value="75">CAIRO</option>
+                <option value="75">GIZA</option>
+                <option value="75">ALEXANDRIA</option>
+                <option value="75">BENI SUEF</option>
+                <option value="75">FAYOUM</option>
+                <option value="75">MINYA</option>
               </optgroup>
-              <optgroup label="ZONE B - LE 85">
-                <option value="85">DAKAHLIA</option><option value="85">GHARBIA</option>
+              <optgroup label="── ZONE B — LE 85">
+                <option value="85">DAKAHLIA</option>
+                <option value="85">GHARBIA</option>
+                <option value="85">KAFR EL SHEIKH</option>
+                <option value="85">MONUFIA</option>
+                <option value="85">BEHEIRA</option>
+                <option value="85">DAMIETTA</option>
+                <option value="85">PORT SAID</option>
+                <option value="85">ISMAILIA</option>
+                <option value="85">SHARQIA</option>
+                <option value="85">QALYUBIA</option>
               </optgroup>
-              <optgroup label="ZONE C - LE 100">
-                <option value="100">ASSIUT</option><option value="100">SOHAG</option>
+              <optgroup label="── ZONE C — LE 100">
+                <option value="100">ASSIUT</option>
+                <option value="100">SOHAG</option>
+                <option value="100">QENA</option>
+                <option value="100">LUXOR</option>
+                <option value="100">ASWAN</option>
+                <option value="100">RED SEA</option>
+                <option value="100">SUEZ</option>
+                <option value="100">NORTH SINAI</option>
               </optgroup>
-              <optgroup label="ZONE D - LE 110">
+              <optgroup label="── ZONE D — LE 110">
+                <option value="110">NEW VALLEY</option>
+                <option value="110">SOUTH SINAI</option>
                 <option value="110">MATROUH</option>
               </optgroup>
             </select>

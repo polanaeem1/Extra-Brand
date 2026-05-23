@@ -170,6 +170,28 @@ body {
   flex-direction: column;
   gap: 32px;
 }
+.product-page .product-info  .option-group{
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: space-between;  
+}
+.product-page .product-info  .low-stock{
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: space-between;  
+}
+.product-page .product-info .cta-buttons{
+    display: flex;
+  width: 100%;
+  flex-direction: column;
+  flex-wrap: wrap;
+  justify-content: space-between;  
+}
+
 
 .product-page .product-title {
   font-family: 'Bebas Neue', sans-serif;
@@ -586,8 +608,8 @@ body {
   .navbar { padding: 0 20px; height: 64px; }
   .logo-video-wrapper { width: 140px; height: 54px; }
   .nav-icons { gap: 18px; }
-  .nav-icons ion-icon { font-size: 22px; }
-  .menu-icon ion-icon { font-size: 22px; }
+  .nav-icons ion-icon { font-size: 26px; }
+  .menu-icon ion-icon { font-size: 26px; }
   .aside-nav { width: 280px; }
   .product-page { padding-top: 64px; }
 }
