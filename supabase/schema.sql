@@ -205,8 +205,8 @@ create table if not exists public.cart_events (
   id uuid primary key default gen_random_uuid(),
   visitor_id text not null,
   user_id uuid references auth.users(id),
-  product_id uuid references public.products(id),
-  variant_id uuid references public.product_variants(id),
+  product_id uuid references public.products(id) on delete set null,
+  variant_id uuid references public.product_variants(id) on delete set null,
   quantity int not null default 1 check (quantity > 0),
   created_at timestamptz not null default now()
 );
@@ -214,6 +214,18 @@ create table if not exists public.cart_events (
 create index if not exists cart_events_created_at_idx on public.cart_events (created_at desc);
 create index if not exists cart_events_visitor_id_idx on public.cart_events (visitor_id);
 create index if not exists cart_events_user_id_idx on public.cart_events (user_id);
+
+-- Backward-compatible: cart analytics should not block deleting products/variants.
+-- Funnel reports still use visitor_id/user_id and created_at after product references are nulled.
+alter table public.cart_events drop constraint if exists cart_events_product_id_fkey;
+alter table public.cart_events
+add constraint cart_events_product_id_fkey
+foreign key (product_id) references public.products(id) on delete set null;
+
+alter table public.cart_events drop constraint if exists cart_events_variant_id_fkey;
+alter table public.cart_events
+add constraint cart_events_variant_id_fkey
+foreign key (variant_id) references public.product_variants(id) on delete set null;
 
 -- Backward-compatible: if the analytics_visits table already exists, ensure visit_date exists.
 alter table public.analytics_visits add column if not exists visit_date date not null default current_date;
