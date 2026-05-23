@@ -20,6 +20,7 @@ interface Product {
   image: string;
   description: string;
   variants: { size: string; stock: number }[];
+  colorVariants: { color: string; stock: number }[];
 }
 
 type UploadedImage = {
@@ -31,6 +32,7 @@ type UploadedImage = {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const DEFAULT_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
+const DEFAULT_COLORS = ['Black', 'White', 'Red', 'Blue', 'Green', 'Grey', 'Beige'];
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -44,6 +46,8 @@ export default function AdminProducts() {
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [selectedSizes, setSelectedSizes] = useState<string[]>([]);
   const [sizeStock, setSizeStock] = useState<Record<string, string>>({});
+  const [selectedColors, setSelectedColors] = useState<string[]>(['Black']);
+  const [colorStock, setColorStock] = useState<Record<string, string>>({ Black: '1' });
 
   const [formData, setFormData] = useState({
     name: '', price: '', discount: '', category: '', description: ''
@@ -54,7 +58,7 @@ export default function AdminProducts() {
   const loadProducts = async () => {
     const { data, error } = await supabase
       .from('products')
-      .select('*, product_images(*), product_variants(*)')
+      .select('*, product_images(*), product_variants(*), product_colors(*)')
       .eq('is_active', true)
       .order('created_at', { ascending: false });
 
@@ -71,10 +75,11 @@ export default function AdminProducts() {
       category: product.category || '',
       stock: (product.product_variants || []).reduce((sum: number, variant: any) => sum + Number(variant.stock || 0), 0),
       sizes: (product.product_variants || []).map((variant: any) => variant.size),
-      colors: ['Black'],
+      colors: (product.product_colors || []).filter((c: any) => Number(c.stock || 0) > 0).map((c: any) => c.color),
       image: product.product_images?.[0]?.url || '',
       description: product.description || '',
-      variants: product.product_variants || [],
+      variants: (product.product_variants || []).map((variant: any) => ({ size: variant.size, stock: Number(variant.stock || 0) })),
+      colorVariants: (product.product_colors || []).map((c: any) => ({ color: c.color, stock: Number(c.stock || 0) })),
     })));
   };
 
@@ -90,6 +95,7 @@ export default function AdminProducts() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors' }, refresh)
       .subscribe();
 
     const intervalId = window.setInterval(refresh, 30000);
@@ -111,12 +117,20 @@ export default function AdminProducts() {
     if (!formData.description.trim()) errors.push('Description is required.');
     if (!Number.isFinite(price) || price <= 0) errors.push('Price must be greater than 0.');
     if (selectedSizes.length === 0) errors.push('Choose at least one available size.');
+    if (selectedColors.length === 0) errors.push('Choose at least one available color.');
     if (!editingProd && selectedFiles.length === 0) errors.push('At least one product image is required.');
 
     selectedSizes.forEach((size) => {
       const stock = Number(sizeStock[size]);
       if (!Number.isInteger(stock) || stock <= 0) {
         errors.push(`${size} stock must be a whole number greater than 0.`);
+      }
+    });
+
+    selectedColors.forEach((color) => {
+      const stock = Number(colorStock[color]);
+      if (!Number.isInteger(stock) || stock <= 0) {
+        errors.push(`${color} stock must be a whole number greater than 0.`);
       }
     });
 
@@ -144,17 +158,29 @@ export default function AdminProducts() {
         ...acc,
         [variant.size]: String(variant.stock || 0),
       }), {} as Record<string, string>);
+
+      const existingColorVariants = (prod.colorVariants || []).filter((c) => Number(c.stock || 0) > 0);
+      const fallbackStock = nextSizes.reduce((sum, s) => sum + Number(nextStock[s] || 0), 0) || 1;
+      const nextColors = existingColorVariants.length ? existingColorVariants.map((c) => c.color) : ['Black'];
+      const nextColorStock = existingColorVariants.length
+        ? existingColorVariants.reduce((acc, c) => ({ ...acc, [c.color]: String(c.stock || 0) }), {} as Record<string, string>)
+        : ({ Black: String(fallbackStock) } as Record<string, string>);
+
       setFormData({
         name: prod.name, price: prod.price.toString(), discount: prod.discount.toString(),
         category: prod.category, description: prod.description
       });
       setSelectedSizes(nextSizes);
       setSizeStock(nextStock);
+      setSelectedColors(nextColors);
+      setColorStock(nextColorStock);
     } else {
       setEditingProd(null);
       setFormData({ name: '', price: '', discount: '', category: '', description: '' });
       setSelectedSizes([]);
       setSizeStock({});
+      setSelectedColors(['Black']);
+      setColorStock({ Black: '1' });
     }
     setSelectedFiles([]);
     setIsModalOpen(true);
@@ -170,6 +196,18 @@ export default function AdminProducts() {
     });
   };
 
+  const allColors = Array.from(new Set([...DEFAULT_COLORS, ...selectedColors]));
+
+  const toggleColor = (color: string) => {
+    setSelectedColors((current) => {
+      if (current.includes(color)) {
+        return current.filter((item) => item !== color);
+      }
+      setColorStock((stock) => ({ ...stock, [color]: stock[color] || '1' }));
+      return [...current, color];
+    });
+  };
+
   const saveVariants = async (productId: string) => {
     const variants = DEFAULT_SIZES.map((size) => ({
       product_id: productId,
@@ -181,6 +219,41 @@ export default function AdminProducts() {
       .from('product_variants')
       .upsert(variants, { onConflict: 'product_id,size' });
     if (variantsError) throw variantsError;
+  };
+
+  const saveColors = async (productId: string) => {
+    if (selectedColors.length === 0) return;
+
+    const rows = selectedColors.map((color) => ({
+      product_id: productId,
+      color,
+      stock: Number(colorStock[color]) || 0,
+    }));
+
+    const { error: upsertError } = await supabase
+      .from('product_colors')
+      .upsert(rows, { onConflict: 'product_id,color' });
+    if (upsertError) throw upsertError;
+
+    // Remove colors that are no longer selected (safe + avoids PostgREST string formatting edge cases).
+    const { data: existing, error: existingError } = await supabase
+      .from('product_colors')
+      .select('color')
+      .eq('product_id', productId);
+    if (existingError) throw existingError;
+
+    const toDelete = (existing || [])
+      .map((row: any) => row.color)
+      .filter((color: string) => color && !selectedColors.includes(color));
+
+    if (toDelete.length) {
+      const { error: deleteError } = await supabase
+        .from('product_colors')
+        .delete()
+        .eq('product_id', productId)
+        .in('color', toDelete);
+      if (deleteError) throw deleteError;
+    }
   };
 
   const handleSave = async () => {
@@ -223,6 +296,8 @@ export default function AdminProducts() {
 
         currentStep = 'saving size stock rows';
         await saveVariants(editingProd.id);
+        currentStep = 'saving color stock rows';
+        await saveColors(editingProd.id);
 
         if (selectedFiles.length) {
           currentStep = 'uploading product images to Storage';
@@ -248,6 +323,8 @@ export default function AdminProducts() {
           await insertProductImages(created.id, created.name, uploadedImages);
           currentStep = 'saving size stock rows';
           await saveVariants(created.id);
+          currentStep = 'saving color stock rows';
+          await saveColors(created.id);
         }
       }
     } catch (error: any) {
@@ -557,6 +634,25 @@ export default function AdminProducts() {
                         ))}
                       </div>
                     </div>
+                    <div>
+                      <label className="block text-xs font-syncopate text-white/70 tracking-widest mb-2">COLORS</label>
+                      <div className="flex gap-2 flex-wrap">
+                        {allColors.map((color) => (
+                          <button
+                            type="button"
+                            key={color}
+                            onClick={() => toggleColor(color)}
+                            className={`h-10 px-3 rounded-md border font-bold text-xs transition-colors ${
+                              selectedColors.includes(color)
+                                ? 'bg-white text-black border-white'
+                                : 'border-white/10 bg-white/5 hover:bg-white hover:text-black'
+                            }`}
+                          >
+                            {color.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   {selectedSizes.length > 0 && (
@@ -570,6 +666,24 @@ export default function AdminProducts() {
                             step="1"
                             value={sizeStock[size] || ''}
                             onChange={e => setSizeStock({ ...sizeStock, [size]: e.target.value })}
+                            className="w-full bg-black border border-white/10 rounded-md px-4 py-2 text-sm focus:outline-none focus:border-white/40 transition-colors"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {selectedColors.length > 0 && (
+                    <div className="grid grid-cols-2 gap-3">
+                      {selectedColors.map((color) => (
+                        <div key={color}>
+                          <label className="block text-xs font-syncopate text-white/70 tracking-widest mb-2">{color.toUpperCase()} STOCK</label>
+                          <input
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={colorStock[color] || ''}
+                            onChange={e => setColorStock({ ...colorStock, [color]: e.target.value })}
                             className="w-full bg-black border border-white/10 rounded-md px-4 py-2 text-sm focus:outline-none focus:border-white/40 transition-colors"
                           />
                         </div>

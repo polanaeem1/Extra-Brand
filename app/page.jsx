@@ -37,6 +37,7 @@ export default function Home() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors' }, refresh)
       .subscribe();
 
     const intervalId = window.setInterval(refresh, 30000);

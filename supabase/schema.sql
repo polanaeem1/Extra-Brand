@@ -47,6 +47,20 @@ create table if not exists public.product_variants (
   unique (product_id, size)
 );
 
+-- Product colors with per-color stock (independent of size stock).
+create table if not exists public.product_colors (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references public.products(id) on delete cascade,
+  color text not null,
+  stock int not null default 0 check (stock >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (product_id, color)
+);
+
+create index if not exists product_colors_product_id_idx on public.product_colors (product_id);
+create index if not exists product_colors_color_idx on public.product_colors (color);
+
 -- Promo codes (admin-managed, validated on the backend).
 create table if not exists public.promo_codes (
   id uuid primary key default gen_random_uuid(),
@@ -204,6 +218,11 @@ $$;
 drop trigger if exists promo_codes_set_updated_at on public.promo_codes;
 create trigger promo_codes_set_updated_at
 before update on public.promo_codes
+for each row execute function public.set_updated_at();
+
+drop trigger if exists product_colors_set_updated_at on public.product_colors;
+create trigger product_colors_set_updated_at
+before update on public.product_colors
 for each row execute function public.set_updated_at();
 
 create or replace function public.validate_promo_code(p_code text, p_subtotal numeric)
@@ -451,6 +470,7 @@ alter table public.profiles enable row level security;
 alter table public.products enable row level security;
 alter table public.product_images enable row level security;
 alter table public.product_variants enable row level security;
+alter table public.product_colors enable row level security;
 alter table public.promo_codes enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
@@ -512,6 +532,17 @@ for select using (
 
 drop policy if exists "product_variants_admin_write" on public.product_variants;
 create policy "product_variants_admin_write" on public.product_variants
+for all using (public.is_admin()) with check (public.is_admin());
+
+drop policy if exists "product_colors_public_read" on public.product_colors;
+create policy "product_colors_public_read" on public.product_colors
+for select using (
+  public.is_admin()
+  or exists (select 1 from public.products p where p.id = product_id and p.is_active = true)
+);
+
+drop policy if exists "product_colors_admin_write" on public.product_colors;
+create policy "product_colors_admin_write" on public.product_colors
 for all using (public.is_admin()) with check (public.is_admin());
 
 drop policy if exists "promo_codes_admin_all" on public.promo_codes;
@@ -702,6 +733,12 @@ end $$;
 do $$
 begin
   alter publication supabase_realtime add table public.product_variants;
+exception when duplicate_object then null;
+end $$;
+
+do $$
+begin
+  alter publication supabase_realtime add table public.product_colors;
 exception when duplicate_object then null;
 end $$;
 
