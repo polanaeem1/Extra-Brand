@@ -23,6 +23,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [notifOrders, setNotifOrders] = useState<any[]>([]);
@@ -49,6 +50,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     return () => {
       isMounted = false;
     };
+  }, [pathname]);
+
+  useEffect(() => {
+    // Close mobile nav when navigating.
+    setIsMobileNavOpen(false);
+    setIsNotifOpen(false);
   }, [pathname]);
 
   useEffect(() => {
@@ -160,11 +167,77 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         )}
       </AnimatePresence>
 
+      {/* MOBILE NAV DRAWER */}
+      <AnimatePresence>
+        {isMobileNavOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 md:hidden"
+              onClick={() => setIsMobileNavOpen(false)}
+            />
+            <motion.aside
+              initial={{ x: -320, opacity: 0.9 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: -320, opacity: 0.9 }}
+              transition={{ type: 'tween', duration: 0.18 }}
+              className="fixed inset-y-0 left-0 w-[280px] border-r border-white/10 bg-[#050505] z-50 md:hidden flex flex-col"
+            >
+              <div className="h-20 flex items-center px-6 border-b border-white/10">
+                <span className="font-syncopate font-bold tracking-[0.3em] text-sm">EXTRA ADMIN</span>
+              </div>
+
+              <nav className="flex-1 py-6 px-4 space-y-2 overflow-auto">
+                {navItems.map((item) => {
+                  const isActive = pathname === item.href;
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={() => setIsMobileNavOpen(false)}
+                      className={`flex items-center gap-4 px-4 py-3 rounded-lg transition-colors ${
+                        isActive ? 'bg-white/10 text-white' : 'text-white/50 hover:bg-white/5 hover:text-white'
+                      }`}
+                    >
+                      <item.icon className="w-5 h-5" />
+                      <span className="font-syncopate text-xs tracking-widest font-bold">{item.name}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              <div className="p-4 border-t border-white/10">
+                <button
+                  onClick={async () => {
+                    const supabase = createClient();
+                    await supabase.auth.signOut();
+                    window.location.href = '/';
+                  }}
+                  className="flex items-center gap-4 px-4 py-3 w-full text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                >
+                  <LogOut className="w-5 h-5" />
+                  <span className="font-syncopate text-xs tracking-widest font-bold">LOGOUT</span>
+                </button>
+              </div>
+            </motion.aside>
+          </>
+        )}
+      </AnimatePresence>
+
       {/* MAIN CONTENT */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* TOPBAR */}
         <header className="h-20 border-b border-white/10 bg-[#050505] flex items-center justify-between px-6 flex-shrink-0">
           <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsMobileNavOpen(true)}
+              className="p-2 hover:bg-white/10 rounded-lg transition-colors md:hidden"
+              aria-label="Open navigation"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
             <button 
               onClick={() => setIsSidebarOpen(!isSidebarOpen)}
               className="p-2 hover:bg-white/10 rounded-lg transition-colors hidden md:block"

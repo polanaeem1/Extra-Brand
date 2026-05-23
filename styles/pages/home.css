@@ -814,12 +814,12 @@ body {
   .logo-video-wrapper { width: 140px; height: 54px; }
   .nav-icons { gap: 18px; }
   .nav-icons ion-icon { font-size: 26px; }
-  .menu-icon ion-icon { font-size: 22px; }
+  .menu-icon ion-icon { font-size: 26px; }
   .hero-content { padding: 0 24px 40px; }
-  .hero-content h1 { font-size: 22px; letter-spacing: 3px; margin-bottom: 16px; }
+  .hero-content h1 { font-size: 22px; letter-spacing: 3px; margin-bottom: 16px; margin-top: -170px; }
   .cta { font-size: 9px; padding: 10px 22px; }
-  .socials { gap: 20px; bottom: 24px; }
-  .socials ion-icon { font-size: 20px; }
+  .socials { gap: 20px; bottom: 57px; }
+  .socials ion-icon {         font-size: 26px; }
   .aside-nav { width: 280px; }
   .ticker-wrap { padding: 11px 0; }
   .ticker-track { gap: 28px; animation-duration: 14s; }
