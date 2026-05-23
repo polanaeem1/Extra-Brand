@@ -32,7 +32,29 @@ type UploadedImage = {
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const DEFAULT_SIZES = ['S', 'M', 'L', 'XL', 'XXL'];
-const DEFAULT_COLORS = ['Black', 'White', 'Red', 'Blue', 'Green', 'Grey', 'Beige'];
+const DEFAULT_COLORS = [
+  'Black',
+  'White',
+  'Off-White',
+  'Grey',
+  'Charcoal',
+  'Beige',
+  'Cream',
+  'Brown',
+  'Navy',
+  'Blue',
+  'Cobalt',
+  'Teal',
+  'Green',
+  'Olive',
+  'Khaki',
+  'Red',
+  'Maroon',
+  'Orange',
+  'Yellow',
+  'Pink',
+  'Purple',
+];
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
