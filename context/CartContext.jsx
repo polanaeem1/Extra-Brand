@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/browser';
 import { getVisitorId } from '@/lib/analytics/visitor';
+import { getCachedUserId, subscribeAuthState } from '@/lib/supabase/authState';
 
 const CartContext = createContext(null);
 
@@ -11,19 +12,9 @@ export function CartProvider({ children }) {
   const [sessionUserId, setSessionUserId] = useState(null);
 
   useEffect(() => {
-    const supabase = createClient();
-
-    supabase.auth.getSession().then(({ data }) => {
-      setSessionUserId(data?.session?.user?.id || null);
-    });
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    return subscribeAuthState((nextSession) => {
       setSessionUserId(nextSession?.user?.id || null);
     });
-
-    return () => {
-      sub?.subscription?.unsubscribe?.();
-    };
   }, []);
 
   // Load from localStorage on mount
@@ -60,7 +51,7 @@ export function CartProvider({ children }) {
           .from('cart_events')
           .insert({
             visitor_id: visitorId,
-            user_id: sessionUserId,
+            user_id: sessionUserId || getCachedUserId(),
             product_id: productId,
             variant_id: variantId,
             quantity: qty,

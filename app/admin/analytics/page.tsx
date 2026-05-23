@@ -12,6 +12,7 @@ import {
   trafficSourceData,
   STATUS_COLORS,
 } from '@/lib/adminMetrics';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 export default function AdminAnalytics() {
   const [monthlyRevenue, setMonthlyRevenue] = useState<any[]>([]);
@@ -35,6 +36,7 @@ export default function AdminAnalytics() {
     let cancelled = false;
 
     const load = async () => {
+      logSupabaseRequest('admin.analytics.loadOverview');
       const [ordersResult, visitsResult] = await Promise.all([
         supabase
           .from('orders')
@@ -71,7 +73,7 @@ export default function AdminAnalytics() {
     };
 
     load();
-    const interval = setInterval(load, 60000);
+    const interval = setInterval(load, 5 * 60_000);
     return () => {
       cancelled = true;
       clearInterval(interval);
@@ -95,6 +97,7 @@ export default function AdminAnalytics() {
 
     const loadFunnel = async () => {
       const since = rangeSince();
+      logSupabaseRequest('admin.analytics.loadFunnel', funnelRange);
 
       const [cartResult, ordersResult] = await Promise.all([
         supabase
@@ -155,7 +158,7 @@ export default function AdminAnalytics() {
     };
 
     loadFunnel();
-    const interval = setInterval(loadFunnel, 60000);
+    const interval = setInterval(loadFunnel, 5 * 60_000);
     return () => {
       cancelled = true;
       clearInterval(interval);

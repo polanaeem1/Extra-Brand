@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
+import { authRateLimitMessage, isRateLimitError } from '@/lib/supabase/authState';
 import '@/styles/pages/login.css';
 
 export default function LoginPage() {
@@ -13,6 +14,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
+  const redirectingRef = useRef(false);
 
   useEffect(() => {
     const next = (() => {
@@ -24,16 +27,19 @@ export default function LoginPage() {
       }
     })();
 
-    const supabase = createClient();
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return;
-      const { isAdmin } = await getCurrentAdmin();
-      const destination = isAdmin ? (next || '/admin') : '/';
-      router.replace(destination);
-    });
+    getCurrentAdmin()
+      .then(({ user, isAdmin }) => {
+        if (!user || redirectingRef.current) return;
+        redirectingRef.current = true;
+        const destination = isAdmin ? (next || '/admin') : '/';
+        router.replace(destination);
+      })
+      .catch(() => {});
   }, [router]);
 
   const handleLogin = async () => {
+    if (submitLockRef.current || isSubmitting || redirectingRef.current) return;
+
     if (!email || !password) {
       setErrorMsg('PLEASE FILL IN ALL FIELDS.');
       return;
@@ -45,21 +51,27 @@ export default function LoginPage() {
     
     setErrorMsg('');
     setIsSubmitting(true);
+    submitLockRef.current = true;
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
-      setErrorMsg(error.message.toUpperCase());
+      setErrorMsg(isRateLimitError(error) ? authRateLimitMessage() : error.message.toUpperCase());
       setIsSubmitting(false);
+      submitLockRef.current = false;
       return;
     }
 
-    await supabase.auth.getSession();
-    const { isAdmin } = await getCurrentAdmin();
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role,status')
+      .eq('id', data?.user?.id || '')
+      .maybeSingle();
+    const isAdmin = profile?.role === 'admin' && profile?.status !== 'banned';
 
     const destination = (() => {
       const next = (() => {
@@ -73,6 +85,7 @@ export default function LoginPage() {
       return isAdmin ? (next || '/admin') : '/';
     })();
     // Use a full navigation so cookies/session are definitely applied before middleware checks.
+    redirectingRef.current = true;
     window.location.assign(destination);
   };
 

@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/browser';
 import { Plus, Search, Edit2, Trash2, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 type PromoCodeRow = {
   id: string;
@@ -59,6 +60,7 @@ export default function AdminPromoCodes() {
   const supabase = useMemo(() => createClient(), []);
 
   const loadPromos = async () => {
+    logSupabaseRequest('admin.promos.loadPromos');
     const { data, error } = await supabase
       .from('promo_codes')
       .select(
@@ -77,8 +79,21 @@ export default function AdminPromoCodes() {
 
   useEffect(() => {
     loadPromos();
-    const interval = window.setInterval(loadPromos, 30000);
-    return () => window.clearInterval(interval);
+    let refreshTimer: number | null = null;
+    const refresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadPromos, 750);
+    };
+
+    const channel = supabase
+      .channel('admin:promo_codes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'promo_codes' }, refresh)
+      .subscribe();
+
+    return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

@@ -37,7 +37,16 @@ export async function proxy(request: NextRequest) {
 
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser();
+
+  if (userError) {
+    const status = (userError as any)?.status;
+    const message = String(userError.message || '').toLowerCase();
+    if (status === 429 || message.includes('too many') || message.includes('rate limit')) {
+      return response;
+    }
+  }
 
   if (!user) {
     const next = encodeURIComponent(pathname + (request.nextUrl.search || ''));

@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import { createClient } from '@/lib/supabase/browser';
 import { getVisitorId } from '@/lib/analytics/visitor';
+import { getCachedUserId } from '@/lib/supabase/authState';
 import '@/styles/pages/contact.css';
 
 const socialCards = [
@@ -59,11 +60,10 @@ export default function ContactPage() {
 
     try {
       const supabase = createClient();
-      const { data: sessionData } = await supabase.auth.getSession();
 
       const { error } = await supabase.from('contact_messages').insert({
         visitor_id: getVisitorId(),
-        user_id: sessionData?.session?.user?.id || null,
+        user_id: getCachedUserId(),
         name: name.trim(),
         email: email.trim(),
         message: message.trim(),

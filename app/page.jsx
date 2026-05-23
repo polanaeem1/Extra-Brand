@@ -2,8 +2,9 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import Footer from '@/components/Footer';
-import { fetchProducts } from '@/lib/supabase/catalog';
+import { fetchProducts, invalidateProductsCache } from '@/lib/supabase/catalog';
 import { createClient } from '@/lib/supabase/browser';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 import '@/styles/pages/home.css';
 
 const socialLinks = [
@@ -22,16 +23,26 @@ export default function Home() {
   
   useEffect(() => {
     let isMounted = true;
+    let refreshTimer = null;
     const supabase = createClient();
 
-    const refresh = () =>
-      fetchProducts().then((nextProducts) => {
+    const refresh = (force = false) =>
+      fetchProducts({ force }).then((nextProducts) => {
         if (!isMounted) return;
         setProducts(nextProducts);
         setIsLoadingProducts(false);
       });
 
+    const scheduleRefresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        invalidateProductsCache();
+        refresh(true);
+      }, 750);
+    };
+
     const refreshInsta = async () => {
+      logSupabaseRequest('storage.product-instagram.list');
       const { data, error } = await supabase.storage.from('product-instagram').list('', {
         limit: 50,
         offset: 0,
@@ -63,20 +74,15 @@ export default function Home() {
 
     const channel = supabase
       .channel('public:products')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, refresh)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors' }, scheduleRefresh)
       .subscribe();
-
-    const intervalId = window.setInterval(() => {
-      refresh();
-      refreshInsta();
-    }, 30000);
 
     return () => {
       isMounted = false;
-      window.clearInterval(intervalId);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, []);

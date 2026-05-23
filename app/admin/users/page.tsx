@@ -4,6 +4,7 @@ import { Search, Eye, X, UserX, UserCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/browser';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 interface User {
   id: string;
@@ -24,6 +25,7 @@ export default function AdminUsers() {
   const [supabase] = useState(() => createClient());
 
   const loadUsers = async () => {
+    logSupabaseRequest('admin.users.loadUsers');
     const { data: profiles, error: profileError } = await supabase
       .from('profiles')
       .select('*')
@@ -72,7 +74,11 @@ export default function AdminUsers() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => loadUsers();
+    let refreshTimer: number | null = null;
+    const refresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadUsers, 750);
+    };
 
     const channel = supabase
       .channel('admin:users-spend')
@@ -80,10 +86,8 @@ export default function AdminUsers() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, refresh)
       .subscribe();
 
-    const intervalId = window.setInterval(refresh, 30000);
-
     return () => {
-      window.clearInterval(intervalId);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [supabase]);

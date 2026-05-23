@@ -4,6 +4,7 @@ import { Search, Filter, Eye, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
 import { createClient } from '@/lib/supabase/browser';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 type OrderStatus = 'Pending' | 'Confirmed' | 'Processing' | 'Shipped' | 'Delivered' | 'Cancelled';
 
@@ -52,6 +53,7 @@ export default function AdminOrders() {
   const [supabase] = useState(() => createClient());
 
   const loadOrders = async () => {
+    logSupabaseRequest('admin.orders.loadOrders');
     const { data } = await supabase
       .from('orders')
       .select('*, order_items(*)')
@@ -88,7 +90,11 @@ export default function AdminOrders() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => loadOrders();
+    let refreshTimer: number | null = null;
+    const refresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadOrders, 750);
+    };
 
     const channel = supabase
       .channel('admin:orders')
@@ -96,10 +102,8 @@ export default function AdminOrders() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'order_items' }, refresh)
       .subscribe();
 
-    const intervalId = window.setInterval(refresh, 30000);
-
     return () => {
-      window.clearInterval(intervalId);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [supabase]);

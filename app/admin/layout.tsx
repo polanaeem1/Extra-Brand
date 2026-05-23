@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 import { 
   LayoutDashboard, ShoppingBag, Package, 
   Users, LineChart, LogOut, Bell, Search, Menu, Tag, MessageSquare
@@ -35,11 +36,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     let isMounted = true;
+    let retryTimer: number | null = null;
 
-    getCurrentAdmin().then(({ isAdmin }) => {
+    const verifyAdmin = (allowRetry = true) => getCurrentAdmin().then(({ isAdmin }) => {
       if (!isMounted) return;
 
       if (!isAdmin) {
+        if (allowRetry) {
+          retryTimer = window.setTimeout(() => verifyAdmin(false), 2000);
+          return;
+        }
         const next = encodeURIComponent(pathname || '/admin');
         window.location.href = `/login?next=${next}`;
         return;
@@ -49,8 +55,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       setIsLoading(false);
     });
 
+    verifyAdmin(true);
+
     return () => {
       isMounted = false;
+      if (retryTimer) window.clearTimeout(retryTimer);
     };
   }, [pathname]);
 
@@ -64,6 +73,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     if (!isAuthenticated) return;
 
     const loadNotifications = async () => {
+      logSupabaseRequest('admin.notifications.load');
       const [ordersResult, messagesResult] = await Promise.all([
         supabase
           .from('orders')
@@ -93,10 +103,16 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     loadNotifications();
 
+    let refreshTimer: number | null = null;
+    const refresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadNotifications, 750);
+    };
+
     const channel = supabase
       .channel('admin:notifications')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, loadNotifications)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_messages' }, loadNotifications)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_messages' }, refresh)
       .subscribe();
 
     const handleClickOutside = (event: MouseEvent) => {
@@ -106,6 +122,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     document.addEventListener('mousedown', handleClickOutside);
 
     return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
       document.removeEventListener('mousedown', handleClickOutside);
     };

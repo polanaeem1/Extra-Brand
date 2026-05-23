@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/browser';
 import { Search, Trash2, Eye, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 type ContactMessage = {
   id: string;
@@ -24,6 +25,7 @@ export default function AdminMessages() {
   const [supabase] = useState(() => createClient());
 
   const loadMessages = async () => {
+    logSupabaseRequest('admin.messages.loadMessages');
     const { data, error } = await supabase
       .from('contact_messages')
       .select('id,name,email,message,is_read,created_at')
@@ -41,15 +43,19 @@ export default function AdminMessages() {
 
   useEffect(() => {
     loadMessages();
+    let refreshTimer: number | null = null;
+    const refresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadMessages, 750);
+    };
 
     const channel = supabase
       .channel('admin:contact_messages')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_messages' }, loadMessages)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'contact_messages' }, refresh)
       .subscribe();
 
-    const intervalId = window.setInterval(loadMessages, 30000);
     return () => {
-      window.clearInterval(intervalId);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -249,4 +255,3 @@ export default function AdminMessages() {
     </div>
   );
 }
-

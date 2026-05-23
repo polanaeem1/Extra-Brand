@@ -1,22 +1,66 @@
 import { createClient } from './browser';
+import { getSessionOnce, isRateLimitError } from './authState';
+
+let cachedAdminResult: {
+  user: any;
+  profile: any;
+  isAdmin: boolean;
+  rateLimited?: boolean;
+} | null = null;
+let cachedAt = 0;
+let inFlight: Promise<any> | null = null;
+
+const CACHE_MS = 60_000;
 
 export async function getCurrentAdmin() {
-  const supabase = createClient();
-  const { data: userData, error: userError } = await supabase.auth.getUser();
+  const now = Date.now();
+  if (cachedAdminResult && now - cachedAt < CACHE_MS) {
+    return cachedAdminResult;
+  }
+  if (inFlight) return inFlight;
 
-  if (userError || !userData.user) {
-    return { user: null, profile: null, isAdmin: false };
+  inFlight = loadCurrentAdmin().finally(() => {
+    inFlight = null;
+  });
+
+  return inFlight;
+}
+
+async function loadCurrentAdmin() {
+  const supabase = createClient();
+  const session = await getSessionOnce();
+  const sessionUser = session?.user || null;
+
+  if (!sessionUser) {
+    const result = { user: null, profile: null, isAdmin: false };
+    cachedAdminResult = result;
+    cachedAt = Date.now();
+    return result;
   }
 
   const { data: profile } = await supabase
     .from('profiles')
     .select('id,email,first_name,last_name,phone,role,status')
-    .eq('id', userData.user.id)
+    .eq('id', sessionUser.id)
     .maybeSingle();
 
-  return {
-    user: userData.user,
+  const result = {
+    user: sessionUser,
     profile,
     isAdmin: profile?.role === 'admin' && profile?.status !== 'banned',
   };
+
+  cachedAdminResult = result;
+  cachedAt = Date.now();
+  return result;
+}
+
+export function clearCurrentAdminCache() {
+  cachedAdminResult = null;
+  cachedAt = 0;
+}
+
+export function adminAuthErrorMessage(error: any) {
+  if (isRateLimitError(error)) return 'Too many attempts. Please wait a few minutes and try again.';
+  return error?.message || 'Unable to check admin session.';
 }

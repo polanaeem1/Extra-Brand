@@ -2,6 +2,7 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { getVisitorId } from '@/lib/analytics/visitor';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 function normalizeTrafficSource(input) {
   const value = (input || '').trim().toLowerCase();
@@ -60,8 +61,9 @@ function shouldSendVisit(pathname) {
   const dateKey = new Date().toLocaleDateString('en-CA'); // local timezone (e.g. Cairo)
   const key = `extra_visit_sent_${dateKey}:${pathname}`;
   try {
-    if (sessionStorage.getItem(key)) return false;
+    if (sessionStorage.getItem(key) || localStorage.getItem(key)) return false;
     sessionStorage.setItem(key, '1');
+    localStorage.setItem(key, '1');
   } catch {
     // sessionStorage might be blocked; fall back to "send"
   }
@@ -69,6 +71,7 @@ function shouldSendVisit(pathname) {
 }
 
 function sendVisit(payload) {
+  logSupabaseRequest('analytics.visit', payload.page_path);
   try {
     if (navigator.sendBeacon) {
       const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useAside } from '@/context/AsideContext';
 import { useCart } from '@/context/CartContext';
 import { createClient } from '@/lib/supabase/browser';
+import { signOutOnce, subscribeAuthState } from '@/lib/supabase/authState';
 
 export default function Navbar() {
   const { openAside } = useAside();
@@ -27,9 +28,11 @@ export default function Navbar() {
 
   useEffect(() => {
     let isMounted = true;
+    let profileRequestId = 0;
 
-    const refreshIdentity = async (sessionUser) => {
-      const user = sessionUser || (await supabase.auth.getUser()).data.user;
+    const refreshIdentity = async (session) => {
+      const requestId = ++profileRequestId;
+      const user = session?.user || null;
       if (!isMounted) return;
 
       setUserEmail(user?.email || '');
@@ -43,22 +46,18 @@ export default function Navbar() {
         .eq('id', user.id)
         .maybeSingle();
 
-      if (!isMounted) return;
+      if (!isMounted || requestId !== profileRequestId) return;
       setIsAdmin(profile?.role === 'admin' && profile?.status !== 'banned');
     };
 
-    refreshIdentity(null);
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUserEmail(session?.user?.email || '');
-      setIsAdmin(false);
-      if (session?.user) refreshIdentity(session.user);
+    const unsubscribe = subscribeAuthState((session) => {
+      refreshIdentity(session);
       setIsProfileOpen(false);
     });
 
     return () => {
       isMounted = false;
-      listener.subscription.unsubscribe();
+      unsubscribe();
     };
   }, [supabase]);
 
@@ -74,7 +73,7 @@ export default function Navbar() {
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await signOutOnce();
     setUserEmail('');
     setIsAdmin(false);
     setIsProfileOpen(false);

@@ -71,12 +71,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ tracked: false });
   }
 
-  // For analytics attribution only, avoid an extra network call by reading the session from cookies.
-  // Security still comes from PostgREST JWT verification + RLS policies.
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
   const { error } = await supabase.from('analytics_visits').insert({
     visitor_id: visitorId,
     page_path: pagePath,
@@ -86,7 +80,7 @@ export async function POST(request: Request) {
     utm_source: utmSource || null,
     utm_medium: utmMedium || null,
     utm_campaign: utmCampaign || null,
-    user_id: session?.user?.id ?? null,
+    user_id: null,
   });
 
   // When the optional dedupe unique index is enabled, repeat visits can cause a 23505 unique violation.

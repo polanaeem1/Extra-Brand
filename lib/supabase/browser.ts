@@ -1,5 +1,8 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { supabaseAuthOptions, supabaseCookieOptions } from './options';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+let browserClient: SupabaseClient | null = null;
 
 export function createClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -9,8 +12,12 @@ export function createClient() {
     throw new Error('Missing Supabase public environment variables.');
   }
 
-  return createBrowserClient(supabaseUrl, supabaseKey, {
+  if (browserClient) return browserClient;
+
+  browserClient = createBrowserClient(supabaseUrl, supabaseKey, {
     cookieOptions: supabaseCookieOptions,
     auth: supabaseAuthOptions,
   });
+
+  return browserClient;
 }

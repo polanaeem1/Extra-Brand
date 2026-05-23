@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
 import ConfirmDialog from '@/components/admin/ConfirmDialog';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 interface Product {
   id: string;
@@ -81,6 +82,7 @@ export default function AdminProducts() {
   const [supabase] = useState(() => createClient());
 
   const loadProducts = async () => {
+    logSupabaseRequest('admin.products.loadProducts');
     const { data, error } = await supabase
       .from('products')
       .select('*, product_images(*), product_variants(*), product_colors(*), product_reviews(*)')
@@ -121,7 +123,11 @@ export default function AdminProducts() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => loadProducts();
+    let refreshTimer: number | null = null;
+    const refresh = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(loadProducts, 750);
+    };
 
     const channel = supabase
       .channel('admin:products')
@@ -132,10 +138,8 @@ export default function AdminProducts() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'product_reviews' }, refresh)
       .subscribe();
 
-    const intervalId = window.setInterval(refresh, 30000);
-
     return () => {
-      window.clearInterval(intervalId);
+      if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
   }, [supabase]);

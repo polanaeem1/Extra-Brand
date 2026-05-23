@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
+import { authRateLimitMessage, isRateLimitError } from '@/lib/supabase/authState';
 import '@/styles/pages/register.css';
 
 export default function RegisterPage() {
@@ -15,17 +16,18 @@ export default function RegisterPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitLockRef = useRef(false);
 
   useEffect(() => {
-    const supabase = createClient();
-    supabase.auth.getUser().then(async ({ data }) => {
-      if (!data.user) return;
-      const { isAdmin } = await getCurrentAdmin();
+    getCurrentAdmin().then(async ({ user, isAdmin }) => {
+      if (!user) return;
       router.replace(isAdmin ? '/admin' : '/');
-    });
+    }).catch(() => {});
   }, [router]);
 
   const handleRegister = async () => {
+    if (submitLockRef.current || isSubmitting) return;
+
     const { firstName, lastName, email, phone, password, confirm } = formData;
     if (!firstName || !lastName || !email || !phone || !password || !confirm) {
       setErrorMsg('PLEASE FILL IN ALL FIELDS.');
@@ -46,6 +48,7 @@ export default function RegisterPage() {
 
     setErrorMsg('');
     setIsSubmitting(true);
+    submitLockRef.current = true;
 
     const supabase = createClient();
     const emailRedirectTo = (() => {
@@ -71,8 +74,9 @@ export default function RegisterPage() {
     });
 
     if (error) {
-      setErrorMsg(error.message.toUpperCase());
+      setErrorMsg(isRateLimitError(error) ? authRateLimitMessage() : error.message.toUpperCase());
       setIsSubmitting(false);
+      submitLockRef.current = false;
       return;
     }
 
