@@ -331,8 +331,8 @@ export default function ProductPage() {
         <div className="reviews-section">
           <h2 className="reviews-title">CUSTOMER REVIEWS</h2>
           <div className="reviews-track">
-            {product.reviews.map((rev) => (
-              <div className="review-card" key={rev.id}>
+            {product.reviews.concat(product.reviews).map((rev, i) => (
+              <div className="review-card" key={`${rev.id}-${i}`}>
                 <div className="review-avatar">{(rev.name || '?').slice(0, 1).toUpperCase()}</div>
                 <div className="review-body">
                   <p className="review-name">{rev.name}</p>

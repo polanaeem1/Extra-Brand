@@ -208,24 +208,28 @@ export default function Home() {
           </div>
         )}
 
-        {products.map((product, index) => (
-          <Link href={`/product/${product.slug || product.id || index + 1}`} className="product-card" key={product.id || product.title}>
-            <div className="product-frame">
-              {product.images?.[0] ? (
-                <img src={product.images[0]} alt={product.title} />
-              ) : (
-                <div className="product-image-missing">NO IMAGE</div>
-              )}
-              <div className="product-cta-wrap">
-                <span className="product-cta">SHOP NOW ⟶</span>
-              </div>
-            </div>
-            <div className="product-info">
-              <h3 className="product-name">{product.title}</h3>
-              <p className="product-price">{product.priceLabel}</p>
-            </div>
-          </Link>
-        ))}
+        {!isLoadingProducts && products.length > 0 && (
+          <div className="products-grid">
+            {products.map((product, index) => (
+              <Link href={`/product/${product.slug || product.id || index + 1}`} className="product-card" key={product.id || product.title}>
+                <div className="product-frame">
+                  {product.images?.[0] ? (
+                    <img src={product.images[0]} alt={product.title} />
+                  ) : (
+                    <div className="product-image-missing">NO IMAGE</div>
+                  )}
+                  <div className="product-cta-wrap">
+                    <span className="product-cta">SHOP NOW ⟶</span>
+                  </div>
+                </div>
+                <div className="product-info">
+                  <h3 className="product-name">{product.title}</h3>
+                  <p className="product-price">{product.priceLabel}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="insta-section">
