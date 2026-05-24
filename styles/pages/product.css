@@ -243,6 +243,18 @@ body {
 .product-page .qty-display { width: 52px; text-align: center; font-family: 'Syncopate', sans-serif; font-size: 13px; font-weight: 700; color: #fff; border-left: 1px solid rgba(207,207,207,0.3); border-right: 1px solid rgba(207,207,207,0.3); line-height: 52px; }
 
 .product-page .low-stock { font-family: 'Inter', sans-serif; font-size: 11px; color: var(--silver); letter-spacing: 0.05em; opacity: 0.7; margin-top: -16px; }
+.product-page .low-stock-alert {
+  width: fit-content;
+  padding: 7px 10px;
+  background: #fff;
+  color: #000;
+  opacity: 1;
+  font-family: 'Syncopate', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+.product-page .low-stock-alert span { color: #ff2222; }
 
 .product-page .cta-buttons { display: flex; flex-direction: column; gap: 12px; }
 

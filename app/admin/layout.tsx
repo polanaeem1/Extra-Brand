@@ -34,7 +34,37 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [notifMessages, setNotifMessages] = useState<any[]>([]);
   const [notifError, setNotifError] = useState('');
   const notifRef = useRef<HTMLDivElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioUnlockedRef = useRef(false);
+  const notifKeysRef = useRef<Set<string>>(new Set());
+  const didLoadNotificationsRef = useRef(false);
   const [supabase] = useState(() => createClient());
+
+  const playNotificationSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContextClass || !audioUnlockedRef.current) return;
+
+      const context = audioContextRef.current || new AudioContextClass();
+      audioContextRef.current = context;
+      if (context.state === 'suspended') context.resume();
+
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(880, context.currentTime);
+      oscillator.frequency.exponentialRampToValueAtTime(1320, context.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.18);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 0.2);
+    } catch {
+      // Browser audio can be blocked until a user gesture; notification UI still works.
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -81,6 +111,20 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!isAuthenticated) return;
 
+    const unlockAudio = () => {
+      audioUnlockedRef.current = true;
+      try {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextClass) return;
+        const context = audioContextRef.current || new AudioContextClass();
+        audioContextRef.current = context;
+        if (context.state === 'suspended') context.resume();
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('pointerdown', unlockAudio, { once: true });
+
     const loadNotifications = async () => {
       logSupabaseRequest('admin.notifications.load');
       const [ordersResult, messagesResult] = await Promise.all([
@@ -106,8 +150,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       }
 
       setNotifError('');
-      setNotifOrders(ordersResult.data || []);
-      setNotifMessages(messagesResult.data || []);
+      const nextOrders = ordersResult.data || [];
+      const nextMessages = messagesResult.data || [];
+      const nextKeys = new Set([
+        ...nextOrders.map((order: any) => `order:${order.id}`),
+        ...nextMessages.map((msg: any) => `message:${msg.id}`),
+      ]);
+      const hasNewNotification = didLoadNotificationsRef.current
+        && [...nextKeys].some((key) => !notifKeysRef.current.has(key));
+
+      notifKeysRef.current = nextKeys;
+      didLoadNotificationsRef.current = true;
+      setNotifOrders(nextOrders);
+      setNotifMessages(nextMessages);
+
+      if (hasNewNotification) playNotificationSound();
     };
 
     loadNotifications();
@@ -134,6 +191,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       if (refreshTimer) window.clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
       document.removeEventListener('mousedown', handleClickOutside);
+      window.removeEventListener('pointerdown', unlockAudio);
     };
   }, [isAuthenticated, supabase]);
 

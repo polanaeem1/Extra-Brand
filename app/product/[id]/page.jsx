@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { fetchProductById } from '@/lib/supabase/catalog';
+import { createClient } from '@/lib/supabase/browser';
 import { useCart } from '@/context/CartContext';
 import { saveCheckout } from '@/lib/checkout';
 import '@/styles/pages/product.css';
@@ -28,20 +29,54 @@ export default function ProductPage() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchProductById(id).then((nextProduct) => {
-      if (!isMounted) return;
-      setProduct(nextProduct);
-      setIsLoadingProduct(false);
-      setCurrentIndex(0);
-      setSize('');
-      setColor('');
-      setQty(1);
-    });
+    const loadProduct = () => {
+      fetchProductById(id).then((nextProduct) => {
+        if (!isMounted) return;
+        setProduct(nextProduct);
+        setIsLoadingProduct(false);
+        setCurrentIndex(0);
+        setSize('');
+        setColor('');
+        setQty(1);
+      });
+    };
+
+    loadProduct();
 
     return () => {
       isMounted = false;
     };
   }, [id]);
+
+  useEffect(() => {
+    if (!product?.id) return;
+
+    let isMounted = true;
+    let refreshTimer = null;
+    const supabase = createClient();
+    const refreshProduct = () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        fetchProductById(product.id).then((nextProduct) => {
+          if (!isMounted || !nextProduct) return;
+          setProduct(nextProduct);
+        });
+      }, 750);
+    };
+
+    const channel = supabase
+      .channel(`product-detail:${product.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products', filter: `id=eq.${product.id}` }, refreshProduct)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_variants', filter: `product_id=eq.${product.id}` }, refreshProduct)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_colors', filter: `product_id=eq.${product.id}` }, refreshProduct)
+      .subscribe();
+
+    return () => {
+      isMounted = false;
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      supabase.removeChannel(channel);
+    };
+  }, [product?.id]);
 
   if (isLoadingProduct) {
     return (
@@ -68,6 +103,17 @@ export default function ProductPage() {
     ? product.colorVariants.filter((variant) => variant.stock > 0).map((variant) => variant.color)
     : [];
   const requiresColor = availableColors.length > 0;
+  const selectedColorVariant = product.colorVariants?.find((variant) => variant.color === color);
+  const totalVariantStock = product.variants?.reduce((sum, variant) => sum + Number(variant.stock || 0), 0) || 0;
+  const totalColorStock = product.colorVariants?.reduce((sum, variant) => sum + Number(variant.stock || 0), 0) || 0;
+  const stockCandidates = [
+    selectedVariant ? Number(selectedVariant.stock || 0) : null,
+    selectedColorVariant ? Number(selectedColorVariant.stock || 0) : null,
+  ].filter((value) => Number.isFinite(value));
+  const remainingStock = stockCandidates.length
+    ? Math.min(...stockCandidates)
+    : (totalVariantStock || totalColorStock);
+  const showLowStockCount = !lowStockMsg && remainingStock > 0 && remainingStock < 10;
 
   const goToImage = (index) => {
     if (!totalImages) return;
@@ -253,8 +299,8 @@ export default function ProductPage() {
           </div>
         </div>
 
-        <p className="low-stock" style={{ color: lowStockMsg ? '#ff4444' : '', opacity: lowStockMsg ? 1 : '' }}>
-          {lowStockMsg || '| Low stock — Selling fast'}
+        <p className={`low-stock ${showLowStockCount ? 'low-stock-alert' : ''}`} style={{ color: lowStockMsg ? '#ff4444' : '', opacity: lowStockMsg ? 1 : '' }}>
+          {lowStockMsg || (showLowStockCount ? <>ONLY <span>{remainingStock}</span> LEFT</> : '| Low stock — Selling fast')}
         </p>
 
         <div className="cta-buttons">
