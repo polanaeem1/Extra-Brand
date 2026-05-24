@@ -1,6 +1,7 @@
 import { createBrowserClient } from '@supabase/ssr';
 import { supabaseAuthOptions, supabaseCookieOptions } from './options';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { installSupabaseDebugClient, supabaseDebugFetch } from './debug';
 
 let browserClient: SupabaseClient | null = null;
 
@@ -17,7 +18,12 @@ export function createClient() {
   browserClient = createBrowserClient(supabaseUrl, supabaseKey, {
     cookieOptions: supabaseCookieOptions,
     auth: supabaseAuthOptions,
+    global: {
+      fetch: supabaseDebugFetch,
+    },
   });
+
+  installSupabaseDebugClient(browserClient);
 
   if (typeof window !== 'undefined') {
     try {

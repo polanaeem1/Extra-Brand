@@ -29,6 +29,7 @@ interface Order {
 }
 
 const STATUSES: OrderStatus[] = ['Pending', 'Confirmed', 'Processing', 'Shipped', 'Delivered', 'Cancelled'];
+let ordersLoadPromise: Promise<any[] | null> | null = null;
 
 const StatusBadge = ({ status }: { status: OrderStatus }) => {
   const colors = {
@@ -53,11 +54,20 @@ export default function AdminOrders() {
   const [supabase] = useState(() => createClient());
 
   const loadOrders = async () => {
-    logSupabaseRequest('admin.orders.loadOrders');
-    const { data } = await supabase
-      .from('orders')
-      .select('*, order_items(*)')
-      .order('created_at', { ascending: false });
+    if (!ordersLoadPromise) {
+      logSupabaseRequest('admin.orders.loadOrders');
+      ordersLoadPromise = Promise.resolve(
+        supabase
+          .from('orders')
+          .select('*, order_items(*)')
+          .order('created_at', { ascending: false })
+      ).then(({ data }) => data || [])
+        .finally(() => {
+          ordersLoadPromise = null;
+        });
+    }
+
+    const data = await ordersLoadPromise;
 
     setOrders((data || []).map((order: any) => ({
       id: order.order_number || order.id,

@@ -57,6 +57,7 @@ const DEFAULT_COLORS = [
   'Pink',
   'Purple',
 ];
+let productsLoadPromise: Promise<any[] | null> | null = null;
 
 export default function AdminProducts() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -82,15 +83,28 @@ export default function AdminProducts() {
   const [supabase] = useState(() => createClient());
 
   const loadProducts = async () => {
-    logSupabaseRequest('admin.products.loadProducts');
-    const { data, error } = await supabase
-      .from('products')
-      .select('*, product_images(*), product_variants(*), product_colors(*), product_reviews(*)')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false });
+    if (!productsLoadPromise) {
+      logSupabaseRequest('admin.products.loadProducts');
+      productsLoadPromise = Promise.resolve(
+        supabase
+          .from('products')
+          .select('*, product_images(*), product_variants(*), product_colors(*), product_reviews(*)')
+          .eq('is_active', true)
+          .order('created_at', { ascending: false })
+      ).then(({ data, error }) => {
+          if (error) throw error;
+          return data || [];
+        })
+        .finally(() => {
+          productsLoadPromise = null;
+        });
+    }
 
-    if (error) {
-      setStatusMessage(error.message);
+    let data: any[] = [];
+    try {
+      data = (await productsLoadPromise) || [];
+    } catch (error: any) {
+      setStatusMessage(error?.message || 'Could not load products.');
       return;
     }
 

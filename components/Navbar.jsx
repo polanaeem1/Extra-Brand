@@ -5,6 +5,10 @@ import { useAside } from '@/context/AsideContext';
 import { useCart } from '@/context/CartContext';
 import { createClient } from '@/lib/supabase/browser';
 import { signOutOnce, subscribeAuthState } from '@/lib/supabase/authState';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
+
+const PROFILE_CACHE_MS = 60_000;
+const profileCache = new Map();
 
 export default function Navbar() {
   const { openAside } = useAside();
@@ -40,6 +44,13 @@ export default function Navbar() {
 
       if (!user?.id) return;
 
+      const cached = profileCache.get(user.id);
+      if (cached && cached.expiresAt > Date.now()) {
+        setIsAdmin(cached.isAdmin);
+        return;
+      }
+
+      logSupabaseRequest('navbar.profile.load');
       const { data: profile } = await supabase
         .from('profiles')
         .select('role,status')
@@ -47,7 +58,12 @@ export default function Navbar() {
         .maybeSingle();
 
       if (!isMounted || requestId !== profileRequestId) return;
-      setIsAdmin(profile?.role === 'admin' && profile?.status !== 'banned');
+      const nextIsAdmin = profile?.role === 'admin' && profile?.status !== 'banned';
+      profileCache.set(user.id, {
+        isAdmin: nextIsAdmin,
+        expiresAt: Date.now() + PROFILE_CACHE_MS,
+      });
+      setIsAdmin(nextIsAdmin);
     };
 
     const unsubscribe = subscribeAuthState((session) => {

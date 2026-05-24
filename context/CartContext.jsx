@@ -3,6 +3,7 @@ import { createContext, useContext, useState, useEffect, useCallback } from 'rea
 import { createClient } from '@/lib/supabase/browser';
 import { getVisitorId } from '@/lib/analytics/visitor';
 import { getCachedUserId, subscribeAuthState } from '@/lib/supabase/authState';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
 
 const CartContext = createContext(null);
 
@@ -47,6 +48,7 @@ export function CartProvider({ children }) {
       const supabase = createClient();
       // Fire and forget; never block the UX.
       setTimeout(() => {
+        logSupabaseRequest('cart.trackAddToCart', productId);
         supabase
           .from('cart_events')
           .insert({
@@ -76,7 +78,7 @@ export function CartProvider({ children }) {
       }
       return [...prev, item];
     });
-  }, []);
+  }, [trackAddToCart]);
 
   const removeFromCart = useCallback((index) => {
     setCart(prev => prev.filter((_, i) => i !== index));

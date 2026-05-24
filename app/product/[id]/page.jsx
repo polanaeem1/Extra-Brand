@@ -57,7 +57,7 @@ export default function ProductPage() {
     const refreshProduct = () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       refreshTimer = window.setTimeout(() => {
-        fetchProductById(product.id).then((nextProduct) => {
+        fetchProductById(product.id, { force: true }).then((nextProduct) => {
           if (!isMounted || !nextProduct) return;
           setProduct(nextProduct);
         });

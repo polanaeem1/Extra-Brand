@@ -20,6 +20,8 @@ type PromoCodeRow = {
   updated_at: string;
 };
 
+let promosLoadPromise: Promise<PromoCodeRow[] | null> | null = null;
+
 function toDateTimeLocal(value?: string | null) {
   if (!value) return '';
   const date = new Date(value);
@@ -60,21 +62,34 @@ export default function AdminPromoCodes() {
   const supabase = useMemo(() => createClient(), []);
 
   const loadPromos = async () => {
-    logSupabaseRequest('admin.promos.loadPromos');
-    const { data, error } = await supabase
-      .from('promo_codes')
-      .select(
-        'id,code,discount_percentage,starts_at,expires_at,is_active,usage_limit,used_count,minimum_order_amount,created_at,updated_at'
-      )
-      .order('created_at', { ascending: false });
+    if (!promosLoadPromise) {
+      logSupabaseRequest('admin.promos.loadPromos');
+      promosLoadPromise = Promise.resolve(
+        supabase
+          .from('promo_codes')
+          .select(
+            'id,code,discount_percentage,starts_at,expires_at,is_active,usage_limit,used_count,minimum_order_amount,created_at,updated_at'
+          )
+          .order('created_at', { ascending: false })
+      ).then(({ data, error }) => {
+          if (error) throw error;
+          return (data || []) as PromoCodeRow[];
+        })
+        .finally(() => {
+          promosLoadPromise = null;
+        });
+    }
 
-    if (error) {
-      setStatusMessage(error.message);
+    let data: PromoCodeRow[] = [];
+    try {
+      data = (await promosLoadPromise) || [];
+    } catch (error: any) {
+      setStatusMessage(error?.message || 'Could not load promo codes.');
       return;
     }
 
     setStatusMessage('');
-    setPromos((data || []) as PromoCodeRow[]);
+    setPromos(data);
   };
 
   useEffect(() => {

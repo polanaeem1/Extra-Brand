@@ -14,6 +14,9 @@ const socialLinks = [
   { href: 'https://www.tiktok.com/@extra.styling?_r=1&_t=ZS-96QITrolAuK', icon: 'logo-tiktok', label: 'TikTok' },
 ];
 
+let instagramCache = { value: null, expiresAt: 0, promise: null };
+const INSTAGRAM_CACHE_MS = 5 * 60_000;
+
 export default function Home() {
   const successRef = useRef(null);
   const [email, setEmail] = useState('');
@@ -42,30 +45,42 @@ export default function Home() {
     };
 
     const refreshInsta = async () => {
-      logSupabaseRequest('storage.product-instagram.list');
-      const { data, error } = await supabase.storage.from('product-instagram').list('', {
-        limit: 50,
-        offset: 0,
-        sortBy: { column: 'name', order: 'asc' },
-      });
-
-      if (!isMounted) return;
-
-      if (error) {
-        // Keep UI stable if Storage list isn't allowed yet.
-        setInstaUrls([]);
+      const now = Date.now();
+      if (instagramCache.value && instagramCache.expiresAt > now) {
+        setInstaUrls(instagramCache.value);
+        return;
+      }
+      if (instagramCache.promise) {
+        const cachedUrls = await instagramCache.promise;
+        if (isMounted) setInstaUrls(cachedUrls);
         return;
       }
 
-      const files = (data || [])
-        .map((f) => (f?.name ? String(f.name) : ''))
-        .filter((name) => !!name && name !== '.emptyFolderPlaceholder')
-        .filter((name) => /\.(jpe?g|png|webp|gif)$/i.test(name));
+      logSupabaseRequest('storage.product-instagram.list');
+      instagramCache.promise = supabase.storage.from('product-instagram').list('', {
+        limit: 50,
+        offset: 0,
+        sortBy: { column: 'name', order: 'asc' },
+      }).then(({ data, error }) => {
+        if (error) return [];
 
-      const urls = files
-        .map((name) => supabase.storage.from('product-instagram').getPublicUrl(name)?.data?.publicUrl)
-        .filter(Boolean);
+        const files = (data || [])
+          .map((f) => (f?.name ? String(f.name) : ''))
+          .filter((name) => !!name && name !== '.emptyFolderPlaceholder')
+          .filter((name) => /\.(jpe?g|png|webp|gif)$/i.test(name));
 
+        return files
+          .map((name) => supabase.storage.from('product-instagram').getPublicUrl(name)?.data?.publicUrl)
+          .filter(Boolean);
+      }).catch(() => []).finally(() => {
+        instagramCache.promise = null;
+      });
+
+      const urls = await instagramCache.promise;
+
+      if (!isMounted) return;
+      instagramCache.value = urls;
+      instagramCache.expiresAt = Date.now() + INSTAGRAM_CACHE_MS;
       setInstaUrls(urls);
     };
 

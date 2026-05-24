@@ -17,6 +17,15 @@ import {
   statusBreakdown,
   STATUS_COLORS,
 } from '@/lib/adminMetrics';
+import { logSupabaseRequest } from '@/lib/supabase/debug';
+
+let overviewCache: {
+  value: any;
+  expiresAt: number;
+  promise: Promise<any> | null;
+} = { value: null, expiresAt: 0, promise: null };
+
+const OVERVIEW_CACHE_MS = 30_000;
 
 export default function AdminOverview() {
   const [stats, setStats] = useState({ revenue: 0, orders: 0, users: 0, products: 0 });
@@ -27,12 +36,34 @@ export default function AdminOverview() {
 
   useEffect(() => {
     const supabase = createClient();
+    let cancelled = false;
 
-    Promise.all([
-      supabase.from('orders').select('id,order_number,customer_name,total,status,created_at,order_items(product_name,quantity,line_total)'),
-      supabase.from('profiles').select('id', { count: 'exact', head: true }),
-      supabase.from('products').select('id', { count: 'exact', head: true }),
-    ]).then(([ordersResult, usersResult, productsResult]) => {
+    const loadOverview = () => {
+      const now = Date.now();
+      if (overviewCache.value && overviewCache.expiresAt > now) {
+        return Promise.resolve(overviewCache.value);
+      }
+      if (overviewCache.promise) return overviewCache.promise;
+
+      logSupabaseRequest('admin.overview.load');
+      overviewCache.promise = Promise.all([
+        supabase.from('orders').select('id,order_number,customer_name,total,status,created_at,order_items(product_name,quantity,line_total)'),
+        supabase.from('profiles').select('id', { count: 'exact', head: true }),
+        supabase.from('products').select('id', { count: 'exact', head: true }),
+      ]).then(([ordersResult, usersResult, productsResult]) => {
+        const value = { ordersResult, usersResult, productsResult };
+        overviewCache.value = value;
+        overviewCache.expiresAt = Date.now() + OVERVIEW_CACHE_MS;
+        return value;
+      }).finally(() => {
+        overviewCache.promise = null;
+      });
+
+      return overviewCache.promise;
+    };
+
+    loadOverview().then(({ ordersResult, usersResult, productsResult }) => {
+      if (cancelled) return;
       const orders = ordersResult.data || [];
       const revenueOrders = orders.filter((order: any) => order.status !== 'Cancelled');
 
@@ -47,6 +78,10 @@ export default function AdminOverview() {
       setTopProducts(productRevenueData(orders, 4));
       setActivities(recentActivity(orders, 4));
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const totalStatusOrders = statusData.reduce((sum, item) => sum + item.value, 0);

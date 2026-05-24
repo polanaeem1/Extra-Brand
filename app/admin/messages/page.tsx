@@ -15,6 +15,8 @@ type ContactMessage = {
   created_at: string;
 };
 
+let messagesLoadPromise: Promise<ContactMessage[] | null> | null = null;
+
 export default function AdminMessages() {
   const [messages, setMessages] = useState<ContactMessage[]>([]);
   const [search, setSearch] = useState('');
@@ -25,20 +27,33 @@ export default function AdminMessages() {
   const [supabase] = useState(() => createClient());
 
   const loadMessages = async () => {
-    logSupabaseRequest('admin.messages.loadMessages');
-    const { data, error } = await supabase
-      .from('contact_messages')
-      .select('id,name,email,message,is_read,created_at')
-      .order('created_at', { ascending: false })
-      .limit(200);
+    if (!messagesLoadPromise) {
+      logSupabaseRequest('admin.messages.loadMessages');
+      messagesLoadPromise = Promise.resolve(
+        supabase
+          .from('contact_messages')
+          .select('id,name,email,message,is_read,created_at')
+          .order('created_at', { ascending: false })
+          .limit(200)
+      ).then(({ data, error }) => {
+          if (error) throw error;
+          return (data || []) as ContactMessage[];
+        })
+        .finally(() => {
+          messagesLoadPromise = null;
+        });
+    }
 
-    if (error) {
-      setStatusMessage(error.message);
+    let data: ContactMessage[] = [];
+    try {
+      data = (await messagesLoadPromise) || [];
+    } catch (error: any) {
+      setStatusMessage(error?.message || 'Could not load messages.');
       return;
     }
 
     setStatusMessage('');
-    setMessages((data || []) as ContactMessage[]);
+    setMessages(data);
   };
 
   useEffect(() => {

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { getCurrentAdmin } from '@/lib/supabase/admin';
 import { logSupabaseRequest } from '@/lib/supabase/debug';
-import { authRateLimitMessage } from '@/lib/supabase/authState';
+import { authRateLimitMessage, signOutOnce } from '@/lib/supabase/authState';
 import { 
   LayoutDashboard, ShoppingBag, Package, 
   Users, LineChart, LogOut, Bell, Search, Menu, Tag, MessageSquare
@@ -21,6 +21,8 @@ const navItems = [
   { name: 'Users', href: '/admin/users', icon: Users },
   { name: 'Analytics', href: '/admin/analytics', icon: LineChart },
 ];
+
+let notificationsLoadPromise: Promise<{ orders: any[]; messages: any[] } | null> | null = null;
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -126,32 +128,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     window.addEventListener('pointerdown', unlockAudio, { once: true });
 
     const loadNotifications = async () => {
-      logSupabaseRequest('admin.notifications.load');
-      const [ordersResult, messagesResult] = await Promise.all([
-        supabase
-          .from('orders')
-          .select('id,order_number,customer_name,status,created_at,total')
-          .order('created_at', { ascending: false })
-          .limit(6),
-        supabase
-          .from('contact_messages')
-          .select('id,name,email,message,is_read,created_at')
-          .order('created_at', { ascending: false })
-          .limit(6),
-      ]);
-
-      if (ordersResult.error) {
-        setNotifError(ordersResult.error.message);
-        return;
+      if (!notificationsLoadPromise) {
+        logSupabaseRequest('admin.notifications.load');
+        notificationsLoadPromise = Promise.all([
+          supabase
+            .from('orders')
+            .select('id,order_number,customer_name,status,created_at,total')
+            .order('created_at', { ascending: false })
+            .limit(6),
+          supabase
+            .from('contact_messages')
+            .select('id,name,email,message,is_read,created_at')
+            .order('created_at', { ascending: false })
+            .limit(6),
+        ]).then(([ordersResult, messagesResult]) => {
+          if (ordersResult.error) throw ordersResult.error;
+          if (messagesResult.error) throw messagesResult.error;
+          return {
+            orders: ordersResult.data || [],
+            messages: messagesResult.data || [],
+          };
+        }).finally(() => {
+          notificationsLoadPromise = null;
+        });
       }
-      if (messagesResult.error) {
-        setNotifError(messagesResult.error.message);
+
+      let result: { orders: any[]; messages: any[] } | null = null;
+      try {
+        result = await notificationsLoadPromise;
+      } catch (error: any) {
+        setNotifError(error?.message || 'Could not load notifications.');
         return;
       }
 
       setNotifError('');
-      const nextOrders = ordersResult.data || [];
-      const nextMessages = messagesResult.data || [];
+      const nextOrders = result?.orders || [];
+      const nextMessages = result?.messages || [];
       const nextKeys = new Set([
         ...nextOrders.map((order: any) => `order:${order.id}`),
         ...nextMessages.map((msg: any) => `message:${msg.id}`),
@@ -260,8 +272,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             <div className="p-4 border-t border-white/10">
               <button 
                 onClick={async () => {
-                  const supabase = createClient();
-                  await supabase.auth.signOut();
+                  await signOutOnce();
                   window.location.href = '/';
                 }}
                 className="flex items-center gap-4 px-4 py-3 w-full text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
@@ -318,8 +329,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               <div className="p-4 border-t border-white/10">
                 <button
                   onClick={async () => {
-                    const supabase = createClient();
-                    await supabase.auth.signOut();
+                    await signOutOnce();
                     window.location.href = '/';
                   }}
                   className="flex items-center gap-4 px-4 py-3 w-full text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"

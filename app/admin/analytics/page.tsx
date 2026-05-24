@@ -14,6 +14,14 @@ import {
 } from '@/lib/adminMetrics';
 import { logSupabaseRequest } from '@/lib/supabase/debug';
 
+let analyticsOverviewCache: { value: any; expiresAt: number; promise: Promise<any> | null } = {
+  value: null,
+  expiresAt: 0,
+  promise: null,
+};
+const funnelCache = new Map<string, { value: any; expiresAt: number; promise: Promise<any> | null }>();
+const ANALYTICS_CACHE_MS = 60_000;
+
 export default function AdminAnalytics() {
   const [monthlyRevenue, setMonthlyRevenue] = useState<any[]>([]);
   const [productRevenue, setProductRevenue] = useState<any[]>([]);
@@ -36,21 +44,40 @@ export default function AdminAnalytics() {
     let cancelled = false;
 
     const load = async () => {
-      logSupabaseRequest('admin.analytics.loadOverview');
-      const [ordersResult, visitsResult] = await Promise.all([
-        supabase
-          .from('orders')
-          .select('created_at,total,status,order_items(product_name,quantity,line_total)')
-          .gte('created_at', since180),
-        supabase
-          .from('analytics_visits')
-          .select('id,traffic_source,visitor_id,visit_date,created_at')
-          .gte('created_at', since30)
-          .limit(10000),
-      ]);
+      const now = Date.now();
+      if (!analyticsOverviewCache.value || analyticsOverviewCache.expiresAt <= now) {
+        if (!analyticsOverviewCache.promise) {
+          logSupabaseRequest('admin.analytics.loadOverview');
+          analyticsOverviewCache.promise = Promise.all([
+            supabase
+              .from('orders')
+              .select('created_at,total,status,order_items(product_name,quantity,line_total)')
+              .gte('created_at', since180),
+            supabase
+              .from('analytics_visits')
+              .select('id,traffic_source,visitor_id,visit_date,created_at')
+              .gte('created_at', since30)
+              .limit(10000),
+          ]).then(([ordersResult, visitsResult]) => {
+            const value = { ordersResult, visitsResult };
+            analyticsOverviewCache.value = value;
+            analyticsOverviewCache.expiresAt = Date.now() + ANALYTICS_CACHE_MS;
+            return value;
+          }).catch(() => {
+            const value = { ordersResult: { data: [] }, visitsResult: { data: [] } };
+            analyticsOverviewCache.value = value;
+            analyticsOverviewCache.expiresAt = Date.now() + 10_000;
+            return value;
+          }).finally(() => {
+            analyticsOverviewCache.promise = null;
+          });
+        }
+        await analyticsOverviewCache.promise;
+      }
 
       if (cancelled) return;
 
+      const { ordersResult, visitsResult } = analyticsOverviewCache.value;
       const orders = ordersResult.data || [];
       const visits = visitsResult.data || [];
 
@@ -97,25 +124,52 @@ export default function AdminAnalytics() {
 
     const loadFunnel = async () => {
       const since = rangeSince();
-      logSupabaseRequest('admin.analytics.loadFunnel', funnelRange);
+      const cacheKey = `${funnelRange}:${since.slice(0, 10)}`;
+      const cached = funnelCache.get(cacheKey);
+      let result = cached;
 
-      const [cartResult, ordersResult] = await Promise.all([
-        supabase
-          .from('cart_events')
-          .select('visitor_id,user_id,created_at')
-          .gte('created_at', since)
-          .limit(50000),
-        supabase
-          .from('orders')
-          .select('visitor_id,user_id,created_at,status')
-          .gte('created_at', since)
-          .limit(20000),
-      ]);
+      if (!result || result.expiresAt <= Date.now()) {
+        if (!result?.promise) {
+          logSupabaseRequest('admin.analytics.loadFunnel', funnelRange);
+          const promise = Promise.all([
+            supabase
+              .from('cart_events')
+              .select('visitor_id,user_id,created_at')
+              .gte('created_at', since)
+              .limit(50000),
+            supabase
+              .from('orders')
+              .select('visitor_id,user_id,created_at,status')
+              .gte('created_at', since)
+              .limit(20000),
+          ]).then(([cartResult, ordersResult]) => {
+            const value = { cartResult, ordersResult };
+            funnelCache.set(cacheKey, {
+              value,
+              expiresAt: Date.now() + ANALYTICS_CACHE_MS,
+              promise: null,
+            });
+            return value;
+          }).catch(() => {
+            const value = { cartResult: { data: [] }, ordersResult: { data: [] } };
+            funnelCache.set(cacheKey, {
+              value,
+              expiresAt: Date.now() + 10_000,
+              promise: null,
+            });
+            return value;
+          });
+          result = { value: null, expiresAt: 0, promise };
+          funnelCache.set(cacheKey, result);
+        }
+        await result.promise;
+        result = funnelCache.get(cacheKey);
+      }
 
       if (cancelled) return;
 
-      const cartEvents = cartResult.data || [];
-      const orders = ordersResult.data || [];
+      const cartEvents = result?.value?.cartResult?.data || [];
+      const orders = result?.value?.ordersResult?.data || [];
 
       const keyFor = (row: any) => {
         if (row?.user_id) return `u:${row.user_id}`;

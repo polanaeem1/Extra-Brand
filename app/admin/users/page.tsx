@@ -17,6 +17,8 @@ interface User {
   status: 'Active' | 'Banned';
 }
 
+let usersLoadPromise: Promise<{ profiles: any[]; orders: any[] } | null> | null = null;
+
 export default function AdminUsers() {
   const [users, setUsers] = useState<User[]>([]);
   const [search, setSearch] = useState('');
@@ -25,19 +27,30 @@ export default function AdminUsers() {
   const [supabase] = useState(() => createClient());
 
   const loadUsers = async () => {
-    logSupabaseRequest('admin.users.loadUsers');
-    const { data: profiles, error: profileError } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
+    if (!usersLoadPromise) {
+      logSupabaseRequest('admin.users.loadUsers');
+      usersLoadPromise = Promise.all([
+        supabase
+          .from('profiles')
+          .select('*')
+          .order('created_at', { ascending: false }),
+        supabase
+          .from('orders')
+          .select('email,total,status'),
+      ]).then(([profilesResult, ordersResult]) => {
+        if (profilesResult.error || ordersResult.error) return null;
+        return {
+          profiles: profilesResult.data || [],
+          orders: ordersResult.data || [],
+        };
+      }).finally(() => {
+        usersLoadPromise = null;
+      });
+    }
 
-    if (profileError) return;
-
-    const { data: orders, error: ordersError } = await supabase
-      .from('orders')
-      .select('email,total,status');
-
-    if (ordersError) return;
+    const result = await usersLoadPromise;
+    if (!result) return;
+    const { profiles, orders } = result;
 
     const spendByEmail = new Map<string, { orders: number; spent: number }>();
 
