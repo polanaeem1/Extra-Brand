@@ -169,6 +169,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 32px;
+  min-width: 0;
+  overflow: hidden;
 }
 .product-page .product-info  .option-group{
   display: flex;
@@ -304,12 +306,27 @@ body {
 .product-page .size-chart-img img { width: 100%; display: block; }
 
 /* REVIEWS */
-.product-page .reviews-section { padding-top: 8px; overflow: hidden; }
+.product-page .reviews-section {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  padding-top: 8px;
+  overflow: hidden;
+}
 .product-page .reviews-title { font-family: 'Syncopate', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.3em; color: var(--silver); margin-bottom: 24px; text-align: center; }
-.product-page .reviews-track { display: flex; gap: 12px; overflow-x: auto; scrollbar-width: none; padding-bottom: 8px; animation: reviewsSlideLeft 22s linear infinite; width: max-content; }
+.product-page .reviews-track {
+  display: flex;
+  gap: 12px;
+  width: max-content;
+  max-width: none;
+  overflow: visible;
+  scrollbar-width: none;
+  padding-bottom: 8px;
+  animation: reviewsSlideLeft 22s linear infinite;
+}
 .product-page .reviews-track:hover { animation-play-state: paused; }
 .product-page .reviews-track::-webkit-scrollbar { display: none; }
-.product-page .review-card { min-width: 240px; border: 0.5px solid rgba(255,255,255,0.12); padding: 20px; display: flex; gap: 14px; flex-shrink: 0; background: rgba(255,255,255,0.02); }
+.product-page .review-card { width: 240px; max-width: calc(100vw - 40px); border: 0.5px solid rgba(255,255,255,0.12); padding: 20px; display: flex; gap: 14px; flex-shrink: 0; background: rgba(255,255,255,0.02); }
 .product-page .review-avatar { width: 38px; height: 38px; border-radius: 50%; background: #fff; color: #000; font-family: 'Syncopate', sans-serif; font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .product-page .review-name { font-family: 'Syncopate', sans-serif; font-size: 10px; font-weight: 700; letter-spacing: 0.15em; color: #fff; margin-bottom: 4px; }
 .product-page .review-stars { font-size: 12px; color: #fff; margin-bottom: 8px; letter-spacing: 2px; }

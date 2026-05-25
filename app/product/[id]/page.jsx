@@ -311,7 +311,7 @@ export default function ProductPage() {
         <div className="accordion">
           {[
             { title: 'PRODUCT DETAILS', content: <p>{product.description || 'NO PRODUCT DETAILS AVAILABLE.'}</p> },
-            { title: 'SIZE CHART', content: <div className="size-chart-img"><img src="/assets/images/size-chart.png" alt="Size Chart" /></div> },
+            { title: 'SIZE CHART', content: <div className="size-chart-img"><img src={product.sizeChartUrl || '/assets/images/size-chart.png'} alt="Size Chart" /></div> },
             { title: 'WASHING INSTRUCTIONS', content: <ul><li>WASH COLD 30°C MAX.</li><li>WASH INSIDE OUT.</li><li>DO NOT TUMBLE DRY.</li></ul> },
             { title: 'DELIVERY', content: <ul><li>ORDERS TAKE 2–3 BUSINESS DAYS.</li></ul> }
           ].map((item, i) => (

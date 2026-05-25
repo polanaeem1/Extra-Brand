@@ -20,12 +20,16 @@ create table if not exists public.products (
   slug text unique not null,
   name text not null,
   description text,
+  size_chart_url text,
   price numeric(10,2) not null default 0,
   category text,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.products
+  add column if not exists size_chart_url text;
 
 create table if not exists public.product_images (
   id uuid primary key default gen_random_uuid(),
